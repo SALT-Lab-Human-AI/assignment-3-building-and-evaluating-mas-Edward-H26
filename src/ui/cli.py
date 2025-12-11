@@ -16,7 +16,7 @@ import yaml
 import logging
 from dotenv import load_dotenv
 
-from src.autogen_orchestrator import AutoGenOrchestrator
+from src.langgraph_orchestrator import LangGraphOrchestrator
 
 # Load environment variables
 load_dotenv()
@@ -48,11 +48,10 @@ class CLI:
         # Setup logging
         self._setup_logging()
 
-        # Initialize AutoGen orchestrator
         try:
-            self.orchestrator = AutoGenOrchestrator(self.config)
+            self.orchestrator = LangGraphOrchestrator(self.config)
             self.logger = logging.getLogger("cli")
-            self.logger.info("AutoGen orchestrator initialized successfully")
+            self.logger.info("LangGraph orchestrator initialized successfully")
         except Exception as e:
             self.logger = logging.getLogger("cli")
             self.logger.error(f"Failed to initialize orchestrator: {e}")
@@ -254,7 +253,7 @@ class CLI:
             print(f"   {preview}")
 
 
-def main():
+def main(argv=None):
     """Main entry point for CLI."""
     import argparse
 
@@ -267,7 +266,8 @@ def main():
         help="Path to configuration file"
     )
 
-    args = parser.parse_args()
+    # Accept argv override so callers (e.g., main.py) can strip unrelated args
+    args, _ = parser.parse_known_args(argv)
 
     # Run CLI
     cli = CLI(config_path=args.config)

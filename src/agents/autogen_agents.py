@@ -12,7 +12,7 @@ import os
 from typing import Dict, Any, List, Optional
 from autogen_agentchat.agents import AssistantAgent
 from autogen_agentchat.teams import RoundRobinGroupChat
-from autogen_agentchat.conditions import TextMentionTermination
+from autogen_agentchat.conditions import TextMentionTermination, MaxMessageTermination
 from autogen_core.tools import FunctionTool
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_core.models import ModelFamily
@@ -298,9 +298,15 @@ def create_research_team(config: Dict[str, Any]) -> RoundRobinGroupChat:
     writer = create_writer_agent(config, model_client)
     critic = create_critic_agent(config, model_client)
     
-    # Create termination condition
-    termination = TextMentionTermination("TERMINATE")
-    
+    # Create multi-condition termination to catch various completion signals
+    # This fixes the issue where agents continue after "APPROVED - RESEARCH COMPLETE"
+    termination = (
+        TextMentionTermination("TERMINATE") |
+        TextMentionTermination("APPROVED - RESEARCH COMPLETE") |
+        TextMentionTermination("APPROVED") |
+        MaxMessageTermination(max_messages=25)  # Safety limit to prevent infinite loops
+    )
+
     # Create team with round-robin ordering
     team = RoundRobinGroupChat(
         participants=[planner, researcher, writer, critic],

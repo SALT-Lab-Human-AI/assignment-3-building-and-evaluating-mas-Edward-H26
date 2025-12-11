@@ -1,0 +1,125 @@
+# Dialog Rails for HCI Research Assistant
+# These rails manage conversation flow and context
+
+# =============================================================================
+# 1. GREETING AND INTRODUCTION
+# =============================================================================
+
+define user greet
+  "Hello"
+  "Hi"
+  "Hey"
+  "Good morning"
+  "Good afternoon"
+  "Good evening"
+
+define flow greeting
+  user greet
+  bot greet back
+
+define bot greet back
+  "Hello! I'm an HCI research assistant specializing in Human-Computer Interaction, user experience design, accessibility, and related topics. How can I help you with your research today?"
+
+# =============================================================================
+# 2. HELP AND CAPABILITIES
+# =============================================================================
+
+define user ask for help
+  "What can you do?"
+  "How can you help me?"
+  "What are your capabilities?"
+  "What topics can you help with?"
+
+define flow explain capabilities
+  user ask for help
+  bot explain capabilities
+
+define bot explain capabilities
+  "I can help you with various HCI research topics including:
+
+  1. **Usability Research**: Nielsen's heuristics, usability testing methods, cognitive walkthroughs
+  2. **User Experience Design**: UX principles, design thinking, user-centered design
+  3. **Accessibility**: WCAG guidelines, inclusive design, assistive technologies
+  4. **Interaction Design**: Gestural interfaces, voice UI, tangible computing
+  5. **Research Methods**: User studies, surveys, interviews, A/B testing
+  6. **Emerging Topics**: AI in HCI, VR/AR interfaces, ethical design
+
+  Just ask me about any topic, and I'll provide well-researched information with citations!"
+
+# =============================================================================
+# 3. CLARIFICATION REQUESTS
+# =============================================================================
+
+define user request clarification
+  "What do you mean?"
+  "Can you explain that?"
+  "I don't understand"
+  "Could you clarify?"
+  "Can you elaborate?"
+
+define flow provide clarification
+  user request clarification
+  bot offer clarification
+
+define bot offer clarification
+  "I'd be happy to clarify! Could you tell me which specific part you'd like me to explain in more detail? Or if there's a particular concept that's unclear, let me know and I'll try to explain it in a different way."
+
+# =============================================================================
+# 4. FOLLOW-UP QUESTIONS
+# =============================================================================
+
+define user ask follow up
+  "Tell me more about that"
+  "What else should I know?"
+  "Can you go deeper on that topic?"
+  "What are the details?"
+
+define flow handle follow up
+  user ask follow up
+  bot provide more detail
+
+define bot provide more detail
+  "I'd be happy to dive deeper into that topic. Let me provide some additional context and details..."
+
+# =============================================================================
+# 5. SOURCE AND CITATION REQUESTS
+# =============================================================================
+
+define user ask for sources
+  "Where did you get that information?"
+  "Can you cite your sources?"
+  "What are your references?"
+  "Is there a paper on this?"
+
+define flow provide sources
+  user ask for sources
+  bot provide source information
+
+define bot provide source information
+  "For HCI research, I draw from established sources including:
+
+  - ACM Digital Library (CHI, CSCW, UIST conferences)
+  - Nielsen Norman Group research
+  - Interaction Design Foundation resources
+  - Peer-reviewed journals (IJHCS, TOCHI, etc.)
+  - Foundational textbooks by Don Norman, Ben Shneiderman, and others
+
+  Would you like me to provide specific citations for any particular claims in my response?"
+
+# =============================================================================
+# 6. CONVERSATION END
+# =============================================================================
+
+define user end conversation
+  "Thank you"
+  "Thanks"
+  "Goodbye"
+  "Bye"
+  "That's all for now"
+
+define flow farewell
+  user end conversation
+  bot say goodbye
+
+define bot say goodbye
+  "You're welcome! Feel free to return anytime you have questions about HCI research. Good luck with your work!"

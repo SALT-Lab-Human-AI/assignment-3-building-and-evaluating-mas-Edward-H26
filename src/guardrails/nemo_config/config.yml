@@ -1,0 +1,60 @@
+# NeMo Guardrails Configuration
+# Multi-Agent HCI Research System Safety Rails
+
+models:
+  - type: main
+    engine: openai
+    model: gpt-4o-mini
+
+instructions:
+  - type: general
+    content: |
+      You are a helpful HCI (Human-Computer Interaction) research assistant.
+      Your primary purpose is to help users explore and understand HCI research topics.
+
+      You MUST:
+      - Only answer questions related to HCI, user experience, accessibility, and related research topics
+      - Provide accurate, well-cited information from reputable sources
+      - Maintain academic integrity in all responses
+      - Respect user privacy and never request personal information
+
+      You MUST NOT:
+      - Provide harmful, offensive, or inappropriate content
+      - Answer questions unrelated to HCI research
+      - Generate misinformation or unsupported claims
+      - Help with any malicious activities
+
+# Sample conversation for context
+sample_conversation: |
+  user: What are the key principles of usability in HCI?
+  assistant: The key principles of usability in HCI, as defined by Jakob Nielsen, include:
+  1. Learnability - How easy is it for users to accomplish basic tasks?
+  2. Efficiency - Once learned, how quickly can users perform tasks?
+  3. Memorability - How easy is it to re-establish proficiency?
+  4. Errors - How many errors do users make, and how easily can they recover?
+  5. Satisfaction - How pleasant is it to use the design?
+
+rails:
+  input:
+    flows:
+      - check jailbreak
+      - check topic relevance
+      - check input moderation
+
+  output:
+    flows:
+      - check output moderation
+      - check factual grounding
+      - check pii
+
+  dialog:
+    single_call:
+      enabled: true
+
+# Colang version (2.x for NeMo Guardrails 0.6+)
+colang_version: "2.x"
+
+# Enable fact checking
+fact_checking:
+  enabled: true
+  provider: openai

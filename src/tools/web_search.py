@@ -211,10 +211,9 @@ class WebSearchTool:
         return [r for r in results if r.get("score", 0) >= min_score]
 
 
-# Synchronous wrapper for use with AutoGen tools
 def web_search(query: str, provider: str = "tavily", max_results: int = 5) -> str:
     """
-    Synchronous wrapper for web search (for AutoGen tool integration).
+    Synchronous wrapper for web search.
     
     Args:
         query: Search query

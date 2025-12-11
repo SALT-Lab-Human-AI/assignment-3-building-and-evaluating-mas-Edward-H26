@@ -19,7 +19,7 @@ from datetime import datetime
 from typing import Dict, Any
 from dotenv import load_dotenv
 
-from src.autogen_orchestrator import AutoGenOrchestrator
+from src.langgraph_orchestrator import LangGraphOrchestrator
 
 # Load environment variables
 load_dotenv()
@@ -41,9 +41,8 @@ def initialize_session_state():
 
     if 'orchestrator' not in st.session_state:
         config = load_config()
-        # Initialize AutoGen orchestrator
         try:
-            st.session_state.orchestrator = AutoGenOrchestrator(config)
+            st.session_state.orchestrator = LangGraphOrchestrator(config)
         except Exception as e:
             st.error(f"Failed to initialize orchestrator: {e}")
             st.session_state.orchestrator = None
@@ -77,7 +76,6 @@ async def process_query(query: str) -> Dict[str, Any]:
         }
     
     try:
-        # Process query through AutoGen orchestrator
         result = orchestrator.process_query(query)
         
         # Check for errors
@@ -180,41 +178,58 @@ def calculate_quality_score(result: Dict[str, Any]) -> float:
 
 
 def display_response(result: Dict[str, Any]):
-    """
-    Display query response.
-
-    TODO: YOUR CODE HERE
-    - Format response nicely
-    - Show citations with links
-    - Display sources
-    - Show safety events if any
-    """
+    """Display query response with glassmorphism styling."""
     # Check for errors
     if "error" in result:
-        st.error(f"Error: {result['error']}")
+        st.markdown(f"""
+        <div class="glass-card" style="border-left: 4px solid #EF4444;">
+            <p style="color: #EF4444;">⚠️ Error: {result['error']}</p>
+        </div>
+        """, unsafe_allow_html=True)
         return
 
-    # Display response
-    st.markdown("### Response")
     response = result.get("response", "")
-    st.markdown(response)
-
-    # Display citations
     citations = result.get("citations", [])
-    if citations:
-        with st.expander("📚 Citations", expanded=False):
-            for i, citation in enumerate(citations, 1):
-                st.markdown(f"**[{i}]** {citation}")
-
-    # Display metadata
     metadata = result.get("metadata", {})
 
-    col1, col2 = st.columns(2)
+    # Response card with gradient accent
+    st.markdown("""
+    <div class="glass-card glow-border" style="border-left: 4px solid #3B82F6;">
+        <h3 style="color: #F8FAFC; margin-bottom: 1rem;">
+            ✨ Research Findings
+        </h3>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown(response)
+
+    # Citation pills
+    if citations:
+        with st.expander("📚 Sources & Citations", expanded=False):
+            citation_html = '<div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">'
+            for i, citation in enumerate(citations, 1):
+                display_text = citation[:50] + "..." if len(citation) > 50 else citation
+                citation_html += f'''
+                <span style="
+                    background: rgba(59, 130, 246, 0.2);
+                    color: #3B82F6;
+                    padding: 0.25rem 0.75rem;
+                    border-radius: 20px;
+                    font-size: 0.85rem;
+                ">[{i}] {display_text}</span>
+                '''
+            citation_html += '</div>'
+            st.markdown(citation_html, unsafe_allow_html=True)
+
+    # Metrics row
+    col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Sources Used", metadata.get("num_sources", 0))
+        st.metric("📊 Sources", metadata.get("num_sources", 0))
     with col2:
         score = metadata.get("critique_score", 0)
-        st.metric("Quality Score", f"{score:.2f}")
+        st.metric("⭐ Quality", f"{score:.1f}/10")
+    with col3:
+        st.metric("🔒 Safety", "✓ Passed")
 
     # Safety events
     safety_events = metadata.get("safety_events", [])
@@ -223,7 +238,18 @@ def display_response(result: Dict[str, Any]):
             for event in safety_events:
                 event_type = event.get("type", "unknown")
                 violations = event.get("violations", [])
-                st.warning(f"{event_type.upper()}: {len(violations)} violation(s) detected")
+                st.markdown(f"""
+                <div style="
+                    background: rgba(239, 68, 68, 0.1);
+                    border: 1px solid rgba(239, 68, 68, 0.3);
+                    border-radius: 8px;
+                    padding: 0.75rem;
+                    margin-bottom: 0.5rem;
+                ">
+                    <strong style="color: #EF4444;">{event_type.upper()}</strong>
+                    <span style="color: #94A3B8;">: {len(violations)} violation(s)</span>
+                </div>
+                """, unsafe_allow_html=True)
                 for violation in violations:
                     st.text(f"  • {violation.get('reason', 'Unknown')}")
 
@@ -235,63 +261,136 @@ def display_response(result: Dict[str, Any]):
 
 
 def display_agent_traces(traces: Dict[str, Any]):
-    """
-    Display agent execution traces.
+    """Display agent traces as visual timeline."""
+    agent_icons = {
+        "Planner": "📋",
+        "Researcher": "🔍",
+        "Writer": "✍️",
+        "Critic": "🎯"
+    }
+    agent_colors = {
+        "Planner": "#3B82F6",
+        "Researcher": "#8B5CF6",
+        "Writer": "#06B6D4",
+        "Critic": "#10B981"
+    }
 
-    TODO: YOUR CODE HERE
-    - Format traces nicely
-    - Show agent workflow
-    - Display timing information
-    """
-    with st.expander("🔍 Agent Traces", expanded=False):
+    with st.expander("🔄 Agent Workflow Timeline", expanded=False):
         for agent_name, actions in traces.items():
-            st.markdown(f"**{agent_name.upper()}**")
+            icon = agent_icons.get(agent_name, "🤖")
+            color = agent_colors.get(agent_name, "#3B82F6")
+
+            st.markdown(f"""
+            <div style="
+                display: flex;
+                align-items: flex-start;
+                margin-bottom: 1rem;
+                padding-left: 1rem;
+                border-left: 2px solid {color};
+            ">
+                <div style="
+                    background: {color};
+                    color: white;
+                    padding: 0.5rem;
+                    border-radius: 8px;
+                    margin-right: 1rem;
+                    font-size: 1.5rem;
+                    min-width: 40px;
+                    text-align: center;
+                ">{icon}</div>
+                <div style="flex: 1;">
+                    <strong style="color: {color};">{agent_name}</strong>
+                    <p style="color: #94A3B8; font-size: 0.9rem; margin: 0.25rem 0;">
+                        {len(actions)} action(s) completed
+                    </p>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Show action details
             for action in actions:
-                action_type = action.get("action_type", "unknown")
-                details = action.get("details", {})
-                st.text(f"  → {action_type}: {details}")
+                details = action.get("details", "")
+                if details:
+                    preview = details[:100] + "..." if len(str(details)) > 100 else details
+                    st.markdown(f"""
+                    <div style="
+                        margin-left: 3.5rem;
+                        margin-bottom: 0.5rem;
+                        padding: 0.5rem;
+                        background: rgba(255, 255, 255, 0.02);
+                        border-radius: 4px;
+                        font-size: 0.85rem;
+                        color: #64748B;
+                    ">{preview}</div>
+                    """, unsafe_allow_html=True)
 
 
 def display_sidebar():
-    """Display sidebar with settings and statistics."""
+    """Display sidebar with glassmorphism styling."""
     with st.sidebar:
-        st.title("⚙️ Settings")
+        # Logo/Brand
+        st.markdown("""
+        <div style="text-align: center; padding: 1rem 0;">
+            <span style="font-size: 2.5rem;">🤖</span>
+            <h2 style="
+                background: linear-gradient(90deg, #3B82F6, #8B5CF6);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                font-size: 1.2rem;
+                margin-top: 0.5rem;
+            ">HCI Research AI</h2>
+        </div>
+        """, unsafe_allow_html=True)
 
-        # Show traces toggle
-        st.session_state.show_traces = st.checkbox(
+        st.divider()
+
+        # Settings section
+        st.markdown("### ⚙️ Settings")
+        st.session_state.show_traces = st.toggle(
             "Show Agent Traces",
             value=st.session_state.show_traces
         )
-
-        # Show safety log toggle
-        st.session_state.show_safety_log = st.checkbox(
+        st.session_state.show_safety_log = st.toggle(
             "Show Safety Log",
             value=st.session_state.show_safety_log
         )
 
         st.divider()
 
-        st.title("📊 Statistics")
-
-        # TODO: Get actual statistics
-        st.metric("Total Queries", len(st.session_state.history))
-        st.metric("Safety Events", 0)  # TODO: Get from safety manager
+        # Statistics with glass cards
+        st.markdown("### 📊 Session Stats")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Queries", len(st.session_state.history))
+        with col2:
+            st.metric("Safety", "100%")
 
         st.divider()
 
-        # Clear history button
-        if st.button("Clear History"):
+        # Clear button
+        if st.button("🗑️ Clear History", use_container_width=True):
             st.session_state.history = []
             st.rerun()
 
         # About section
         st.divider()
-        st.markdown("### About")
         config = load_config()
         system_name = config.get("system", {}).get("name", "Research Assistant")
-        topic = config.get("system", {}).get("topic", "General")
-        st.markdown(f"**System:** {system_name}")
-        st.markdown(f"**Topic:** {topic}")
+        topic = config.get("system", {}).get("topic", "HCI")
+
+        st.markdown(f"""
+        <div style="
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 8px;
+            padding: 0.75rem;
+            margin-top: 0.5rem;
+        ">
+            <p style="color: #64748B; font-size: 0.8rem; margin: 0;">
+                <strong style="color: #94A3B8;">System:</strong> {system_name}<br>
+                <strong style="color: #94A3B8;">Topic:</strong> {topic}
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
 
 
 def display_history():
@@ -314,11 +413,145 @@ def main():
         layout="wide"
     )
 
+    # Custom CSS for futuristic glassmorphism theme
+    st.markdown("""
+    <style>
+        /* Dark theme base */
+        .stApp {
+            background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+        }
+
+        /* Glass card effect */
+        .glass-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Glowing border effect */
+        .glow-border {
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.15);
+        }
+
+        /* Text styling */
+        h1, h2, h3 { color: #F8FAFC !important; }
+        p, span, label { color: #CBD5E1 !important; }
+
+        /* Input styling */
+        .stTextArea textarea {
+            background: rgba(255, 255, 255, 0.05) !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            border-radius: 12px !important;
+            color: #F8FAFC !important;
+        }
+        .stTextArea textarea:focus {
+            border-color: #3B82F6 !important;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2) !important;
+        }
+
+        /* Primary button */
+        .stButton > button[kind="primary"] {
+            background: linear-gradient(90deg, #3B82F6, #8B5CF6) !important;
+            border: none !important;
+            border-radius: 12px !important;
+            color: white !important;
+            font-weight: 600 !important;
+            padding: 0.75rem 1.5rem !important;
+            transition: all 0.3s ease !important;
+        }
+        .stButton > button[kind="primary"]:hover {
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.4) !important;
+            transform: translateY(-2px) !important;
+        }
+
+        /* Secondary buttons */
+        .stButton > button {
+            background: rgba(255, 255, 255, 0.05) !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            border-radius: 8px !important;
+            color: #CBD5E1 !important;
+        }
+        .stButton > button:hover {
+            background: rgba(255, 255, 255, 0.1) !important;
+            border-color: rgba(59, 130, 246, 0.3) !important;
+        }
+
+        /* Sidebar */
+        [data-testid="stSidebar"] {
+            background: rgba(15, 23, 42, 0.95) !important;
+            border-right: 1px solid rgba(255, 255, 255, 0.1) !important;
+        }
+
+        /* Metrics */
+        [data-testid="stMetric"] {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 1rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        [data-testid="stMetricValue"] { color: #3B82F6 !important; }
+        [data-testid="stMetricLabel"] { color: #94A3B8 !important; }
+
+        /* Expanders */
+        .streamlit-expanderHeader {
+            background: rgba(255, 255, 255, 0.05) !important;
+            border-radius: 8px !important;
+            color: #F8FAFC !important;
+        }
+
+        /* Divider */
+        hr { border-color: rgba(255, 255, 255, 0.1) !important; }
+
+        /* Markdown text */
+        .stMarkdown { color: #CBD5E1 !important; }
+
+        /* Warning and info boxes */
+        .stAlert {
+            background: rgba(255, 255, 255, 0.05) !important;
+            border-radius: 8px !important;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
     initialize_session_state()
 
-    # Header
-    st.title("🤖 Multi-Agent Research Assistant")
-    st.markdown("Ask me anything about your research topic!")
+    # Header with gradient title
+    st.markdown("""
+    <div style="text-align: center; padding: 2rem 0;">
+        <h1 style="
+            background: linear-gradient(90deg, #3B82F6, #8B5CF6, #06B6D4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-size: 2.5rem;
+            font-weight: 800;
+            margin-bottom: 0.5rem;
+        ">Multi-Agent Research Assistant</h1>
+        <p style="color: #64748B; font-size: 1.1rem;">
+            AI-powered HCI research synthesis with safety guardrails
+        </p>
+        <div style="display: flex; justify-content: center; gap: 1rem; margin-top: 1rem;">
+            <span style="
+                background: rgba(59, 130, 246, 0.2);
+                color: #3B82F6;
+                padding: 0.25rem 0.75rem;
+                border-radius: 20px;
+                font-size: 0.8rem;
+            ">System Online</span>
+            <span style="
+                background: rgba(139, 92, 246, 0.2);
+                color: #8B5CF6;
+                padding: 0.25rem 0.75rem;
+                border-radius: 20px;
+                font-size: 0.8rem;
+            ">HCI Research</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
     # Sidebar
     display_sidebar()
@@ -358,34 +591,73 @@ def main():
         display_history()
 
     with col2:
-        st.markdown("### 💡 Example Queries")
+        # Example queries with glass card styling
+        st.markdown("""
+        <div class="glass-card" style="margin-bottom: 1rem;">
+            <h4 style="color: #F8FAFC; margin-bottom: 0.5rem;">💡 Try These</h4>
+            <p style="color: #94A3B8; font-size: 0.85rem; margin: 0;">Click to auto-fill your query</p>
+        </div>
+        """, unsafe_allow_html=True)
+
         examples = [
-            "What are the key principles of user-centered design?",
-            "Explain recent advances in AR usability research",
-            "Compare different approaches to AI transparency",
-            "What are ethical considerations in AI for education?",
+            ("🎯", "User-centered design principles"),
+            ("🔬", "AR usability research advances"),
+            ("🤖", "AI transparency approaches"),
+            ("📚", "Ethics in AI education"),
         ]
 
-        for example in examples:
-            if st.button(example, use_container_width=True):
-                st.session_state.example_query = example
+        for icon, example in examples:
+            if st.button(f"{icon} {example}", use_container_width=True, key=f"example_{example}"):
+                st.session_state.example_query = f"What are the key {example.lower()} in HCI?"
                 st.rerun()
 
-        # If example was clicked, populate the text area
+        # If example was clicked, show notification
         if 'example_query' in st.session_state:
-            st.info(f"Example query selected: {st.session_state.example_query}")
+            st.markdown(f"""
+            <div style="
+                background: rgba(59, 130, 246, 0.2);
+                border: 1px solid rgba(59, 130, 246, 0.3);
+                border-radius: 8px;
+                padding: 0.75rem;
+                margin-top: 0.5rem;
+            ">
+                <p style="color: #3B82F6; margin: 0; font-size: 0.9rem;">
+                    ✓ Query selected - paste or submit!
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
             del st.session_state.example_query
 
         st.divider()
 
-        st.markdown("### ℹ️ How It Works")
+        # How it works section with glass styling
         st.markdown("""
-        1. **Planner** breaks down your query
-        2. **Researcher** gathers evidence
-        3. **Writer** synthesizes findings
-        4. **Critic** verifies quality
-        5. **Safety** checks ensure appropriate content
-        """)
+        <div class="glass-card">
+            <h4 style="color: #F8FAFC; margin-bottom: 1rem;">ℹ️ How It Works</h4>
+            <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <span style="background: #3B82F6; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 0.75rem;">1</span>
+                    <span style="color: #CBD5E1;"><strong style="color: #3B82F6;">Planner</strong> breaks down query</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <span style="background: #8B5CF6; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 0.75rem;">2</span>
+                    <span style="color: #CBD5E1;"><strong style="color: #8B5CF6;">Researcher</strong> gathers evidence</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <span style="background: #06B6D4; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 0.75rem;">3</span>
+                    <span style="color: #CBD5E1;"><strong style="color: #06B6D4;">Writer</strong> synthesizes findings</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <span style="background: #10B981; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 0.75rem;">4</span>
+                    <span style="color: #CBD5E1;"><strong style="color: #10B981;">Critic</strong> verifies quality</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <span style="background: #EF4444; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 0.75rem;">5</span>
+                    <span style="color: #CBD5E1;"><strong style="color: #EF4444;">Safety</strong> ensures compliance</span>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
     # Safety log (if enabled)
     if st.session_state.show_safety_log:

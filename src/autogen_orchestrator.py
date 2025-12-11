@@ -13,11 +13,13 @@ Workflow:
 
 import logging
 import asyncio
+import re
 from typing import Dict, Any, List, Optional
 from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_agentchat.messages import TextMessage
 
 from src.agents.autogen_agents import create_research_team
+from src.agents.memory import ResearchMemory
 
 
 class AutoGenOrchestrator:
@@ -38,13 +40,17 @@ class AutoGenOrchestrator:
         """
         self.config = config
         self.logger = logging.getLogger("autogen_orchestrator")
-        
+
+        # Initialize multi-agent memory system
+        self.logger.info("Initializing memory system...")
+        self.memory = ResearchMemory(max_findings=20, max_context=10)
+
         # Create the research team
         self.logger.info("Creating research team...")
         self.team = create_research_team(config)
-        
+
         self.logger.info("Research team created successfully")
-        
+
         # Workflow trace for debugging and UI display
         self.workflow_trace: List[Dict[str, Any]] = []
 
@@ -64,24 +70,34 @@ class AutoGenOrchestrator:
             - metadata: Additional information about the process
         """
         self.logger.info(f"Processing query: {query}")
-        
+
+        # Get relevant past context from memory
+        past_context = self.memory.get_relevant_context(query, k=3)
+        if past_context:
+            self.logger.info("Found relevant past research in memory")
+
         try:
-            # Run the async query processing
+            # Run the async query processing with memory context
             loop = asyncio.get_event_loop()
             if loop.is_running():
                 # If we're already in an async context, create a new loop
                 import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor() as pool:
                     result = pool.submit(
-                        asyncio.run, 
-                        self._process_query_async(query, max_rounds)
+                        asyncio.run,
+                        self._process_query_async(query, max_rounds, past_context)
                     ).result()
             else:
-                result = loop.run_until_complete(self._process_query_async(query, max_rounds))
-            
+                result = loop.run_until_complete(
+                    self._process_query_async(query, max_rounds, past_context)
+                )
+
+            # Store findings in memory for future context
+            self._store_in_memory(query, result)
+
             self.logger.info("Query processing complete")
             return result
-            
+
         except Exception as e:
             self.logger.error(f"Error processing query: {e}", exc_info=True)
             return {
@@ -92,20 +108,50 @@ class AutoGenOrchestrator:
                 "metadata": {"error": True}
             }
     
-    async def _process_query_async(self, query: str, max_rounds: int = 20) -> Dict[str, Any]:
+    async def _process_query_async(
+        self, query: str, max_rounds: int = 20, past_context: str = ""
+    ) -> Dict[str, Any]:
         """
         Async implementation of query processing.
-        
+
         Args:
             query: The research question to answer
             max_rounds: Maximum number of conversation rounds
-            
+            past_context: Relevant context from previous research queries
+
         Returns:
             Dictionary containing results
         """
-        # Create task message
-        task_message = f"""Research Query: {query}
+        # Get related citations from memory
+        related_citations = self.memory.get_related_citations(query, k=5)
 
+        # Create task message with enhanced memory context
+        context_section = ""
+        if past_context or related_citations:
+            context_section = "\n## Memory Context"
+
+            if past_context:
+                context_section += f"""
+### Relevant Past Research
+The following context from previous research may be helpful:
+
+{past_context}
+"""
+
+            if related_citations:
+                citation_list = "\n".join([
+                    f"- {c['title']} ({c.get('year', 'n.d.')})"
+                    for c in related_citations
+                ])
+                context_section += f"""
+### Previously Found Relevant Sources
+{citation_list}
+"""
+
+            context_section += "\nPlease build upon this knowledge where relevant and avoid redundant research.\n"
+
+        task_message = f"""Research Query: {query}
+{context_section}
 Please work together to answer this query comprehensively:
 1. Planner: Create a research plan
 2. Researcher: Gather evidence from web and academic sources
@@ -192,6 +238,100 @@ Please work together to answer this query comprehensively:
                 "agents_involved": list(set([msg.get("source", "") for msg in messages])),
             }
         }
+
+    def _store_in_memory(self, query: str, result: Dict[str, Any]) -> None:
+        """
+        Store query results in memory for future context.
+
+        Args:
+            query: The original research query
+            result: The result dictionary from processing
+        """
+        if "error" in result:
+            return  # Don't store failed queries
+
+        response = result.get("response", "")
+        sources = self._extract_sources(result)
+
+        # Store the finding in memory
+        self.memory.add_finding(query, response, sources)
+
+        # Store citations for deduplication
+        for source in sources:
+            self.memory.add_citation(source, {"url": source, "query": query})
+
+        # Update context window with key messages
+        for msg in result.get("conversation_history", [])[-5:]:
+            self.memory.update_context_window(
+                f"{msg.get('source', 'Unknown')}: {msg.get('content', '')[:200]}"
+            )
+
+        self.logger.info(f"Stored finding in memory. Total findings: {len(self.memory.findings)}")
+
+    def _extract_sources(self, result: Dict[str, Any]) -> List[str]:
+        """
+        Extract source URLs from conversation history.
+
+        Args:
+            result: The result dictionary from processing
+
+        Returns:
+            List of source URLs found in the conversation
+        """
+        sources = []
+        url_pattern = re.compile(r'https?://[^\s<>"{}|\\^`\[\]]+')
+
+        for msg in result.get("conversation_history", []):
+            content = msg.get("content", "")
+            urls = url_pattern.findall(content)
+            for url in urls:
+                # Clean up URL (remove trailing punctuation)
+                url = url.rstrip('.,;:\'")]}')
+                if url not in sources:
+                    sources.append(url)
+
+        return sources[:20]  # Limit to 20 sources
+
+    def get_memory_statistics(self) -> Dict[str, Any]:
+        """
+        Get statistics about the memory system.
+
+        Returns:
+            Dictionary with memory statistics
+        """
+        return self.memory.get_statistics()
+
+    def clear_memory(self) -> None:
+        """Clear all stored memory."""
+        self.memory.clear()
+        self.logger.info("Memory cleared")
+
+    def save_memory(self, filepath: str) -> None:
+        """
+        Save memory state to a file.
+
+        Args:
+            filepath: Path to save the memory state
+        """
+        self.memory.save_to_file(filepath)
+        self.logger.info(f"Memory saved to {filepath}")
+
+    def load_memory(self, filepath: str) -> bool:
+        """
+        Load memory state from a file.
+
+        Args:
+            filepath: Path to load the memory state from
+
+        Returns:
+            True if loaded successfully, False otherwise
+        """
+        success = self.memory.load_from_file(filepath)
+        if success:
+            self.logger.info(f"Memory loaded from {filepath}")
+        else:
+            self.logger.warning(f"Failed to load memory from {filepath}")
+        return success
 
     def get_agent_descriptions(self) -> Dict[str, str]:
         """
