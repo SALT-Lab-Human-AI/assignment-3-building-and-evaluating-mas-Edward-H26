@@ -7,6 +7,7 @@ Implements three specialized teams as nested subgraphs:
 3. Synthesis Team: Writing and self-critique with multi-perspective evaluation
 """
 
+import re
 from typing import Dict, Any, List, Callable
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
@@ -154,6 +155,9 @@ def create_research_team(config: Dict) -> Callable:
                         if isinstance(result, str):
                             # Parse the string format from paper_search
                             paper_results = _parse_paper_results(result)
+                            # Fallback: if parsing failed but result has content, store raw
+                            if not paper_results and result.strip():
+                                paper_results = [{"raw_text": result, "title": "Search Results"}]
                         elif isinstance(result, list):
                             paper_results = result
                         else:
@@ -162,6 +166,9 @@ def create_research_team(config: Dict) -> Callable:
                         # Parse web results
                         if isinstance(result, str):
                             web_results = _parse_web_results(result)
+                            # Fallback: if parsing failed but result has content, store raw
+                            if not web_results and result.strip():
+                                web_results = [{"raw_text": result, "title": "Web Results"}]
                         elif isinstance(result, list):
                             web_results = result
                         else:
@@ -310,7 +317,13 @@ End your response with "DRAFT COMPLETE"."""
 
         response = model.invoke(messages)
 
-        return {"draft": response.content}
+        draft = response.content
+        if draft.endswith("DRAFT COMPLETE"):
+            draft = draft[:-14].strip()
+        elif "DRAFT COMPLETE" in draft:
+            draft = draft.replace("DRAFT COMPLETE", "").strip()
+
+        return {"draft": draft}
 
     def critic_node(state: ResearchState) -> Dict:
         """Multi-perspective quality evaluation of the draft."""
@@ -375,30 +388,50 @@ Final Decision:
 
 
 def _parse_paper_results(result_str: str) -> List[Dict]:
-    """Parse paper search results from string format."""
+    """Parse paper search results from string format.
+
+    Handles the numbered format from paper_search():
+    1. Paper Title
+       Authors: Smith, Jones
+       Year: 2023 | Citations: 45 | Venue: CHI
+       Abstract: This is...
+       URL: https://...
+    """
     papers = []
     if not result_str:
         return papers
 
-    lines = result_str.split('\n')
+    lines = result_str.split("\n")
     current_paper = {}
 
     for line in lines:
-        line = line.strip()
-        if line.startswith('Title:'):
+        line_stripped = line.strip()
+
+        if re.match(r"^\d+\.\s+", line_stripped):
             if current_paper:
                 papers.append(current_paper)
-            current_paper = {'title': line[6:].strip()}
-        elif line.startswith('Authors:'):
-            current_paper['authors'] = line[8:].strip()
-        elif line.startswith('Year:'):
-            current_paper['year'] = line[5:].strip()
-        elif line.startswith('Citations:'):
-            current_paper['citations'] = line[10:].strip()
-        elif line.startswith('Abstract:'):
-            current_paper['abstract'] = line[9:].strip()
-        elif line.startswith('URL:'):
-            current_paper['url'] = line[4:].strip()
+            title = re.sub(r"^\d+\.\s+", "", line_stripped)
+            current_paper = {"title": title}
+
+        elif line_stripped.startswith("Authors:"):
+            current_paper["authors"] = line_stripped[8:].strip()
+
+        elif line_stripped.startswith("Year:"):
+            parts = line_stripped.split("|")
+            for part in parts:
+                part = part.strip()
+                if part.startswith("Year:"):
+                    current_paper["year"] = part[5:].strip()
+                elif part.startswith("Citations:"):
+                    current_paper["citations"] = part[10:].strip()
+                elif part.startswith("Venue:"):
+                    current_paper["venue"] = part[6:].strip()
+
+        elif line_stripped.startswith("Abstract:"):
+            current_paper["abstract"] = line_stripped[9:].strip()
+
+        elif line_stripped.startswith("URL:"):
+            current_paper["url"] = line_stripped[4:].strip()
 
     if current_paper:
         papers.append(current_paper)
@@ -407,7 +440,14 @@ def _parse_paper_results(result_str: str) -> List[Dict]:
 
 
 def _parse_web_results(result_str: str) -> List[Dict]:
-    """Parse web search results from string format."""
+    """Parse web search results from string format.
+
+    Handles the numbered format from web_search():
+    1. Title Here
+       URL: https://...
+       Snippet text here
+       Published: date (optional)
+    """
     results = []
     if not result_str:
         return results
@@ -416,15 +456,27 @@ def _parse_web_results(result_str: str) -> List[Dict]:
     current_result = {}
 
     for line in lines:
-        line = line.strip()
-        if line.startswith('Title:'):
+        line_stripped = line.strip()
+
+        # Match numbered title format: "1. Title" or "2. Another Title"
+        if re.match(r'^\d+\.\s+', line_stripped):
             if current_result:
                 results.append(current_result)
-            current_result = {'title': line[6:].strip()}
-        elif line.startswith('URL:'):
-            current_result['url'] = line[4:].strip()
-        elif line.startswith('Snippet:'):
-            current_result['snippet'] = line[8:].strip()
+            title = re.sub(r'^\d+\.\s+', '', line_stripped)
+            current_result = {'title': title}
+
+        elif line_stripped.startswith('URL:'):
+            current_result['url'] = line_stripped[4:].strip()
+
+        elif line_stripped.startswith('Published:'):
+            current_result['published_date'] = line_stripped[10:].strip()
+
+        elif line_stripped and current_result and 'title' in current_result:
+            # Any other non-empty line after title is likely a snippet
+            if 'snippet' not in current_result:
+                current_result['snippet'] = line_stripped
+            else:
+                current_result['snippet'] += ' ' + line_stripped
 
     if current_result:
         results.append(current_result)
