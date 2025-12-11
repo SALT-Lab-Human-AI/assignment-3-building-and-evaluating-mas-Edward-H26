@@ -2,6 +2,7 @@ langgraph
 langchain
 langchain-core
 langchain-community
+langchain-openai
 
 groq
 openai
