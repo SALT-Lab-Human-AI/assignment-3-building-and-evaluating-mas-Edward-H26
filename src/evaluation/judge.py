@@ -23,6 +23,7 @@ import logging
 import json
 import os
 from openai import OpenAI
+from .rubrics import get_rubric_prompt, EVALUATION_RUBRICS
 
 
 class LLMJudge:
@@ -190,37 +191,119 @@ class LLMJudge:
         ground_truth: Optional[str]
     ) -> str:
         """
-        Create a prompt for the judge LLM.
+        Create a prompt for the judge LLM with detailed rubrics.
 
-        TODO: YOUR CODE HERE
-        - Create effective judge prompts
-        - Include clear scoring rubric
-        - Provide examples if helpful
+        Uses rubric-based scoring anchors from rubrics.py for consistent evaluation.
         """
-        prompt = f"""You are an expert evaluator. Evaluate the following response based on the criterion: {criterion_name}.
+        # Get detailed rubric for this criterion
+        rubric_text = get_rubric_prompt(criterion_name)
 
-Criterion Description: {description}
+        prompt = f"""You are an expert HCI research evaluator. Your task is to evaluate responses based on specific criteria with detailed rubrics.
 
-Query: {query}
+# EVALUATION TASK
 
-Response:
+## Criterion: {criterion_name.replace('_', ' ').title()}
+{description}
+
+{rubric_text}
+
+---
+
+## Content to Evaluate
+
+**Original Query:**
+{query}
+
+**Response to Evaluate:**
 {response}
 """
 
         if sources:
-            prompt += f"\n\nSources Used: {len(sources)} sources"
+            # Provide source details if available
+            source_count = len(sources) if isinstance(sources, list) else 0
+            prompt += f"\n**Sources Provided:** {source_count} sources"
+            if source_count > 0 and isinstance(sources[0], dict):
+                prompt += "\n"
+                for i, s in enumerate(sources[:5], 1):
+                    if isinstance(s, dict):
+                        title = s.get('title', s.get('name', 'Unknown'))
+                        prompt += f"  {i}. {title}\n"
+
+        # For evidence_quality, analyze inline citations in the response
+        if criterion_name == "evidence_quality":
+            import re
+            # Count inline citations [Author, Year] format
+            citation_pattern = r'\[([A-Z][a-z]+(?:\s+(?:et al\.|&\s+[A-Z][a-z]+))?),?\s*\d{4}\]'
+            citations = re.findall(citation_pattern, response)
+            citation_count = len(citations)
+            unique_citations = list(set(citations))
+
+            prompt += f"\n\n**Citation Analysis (Auto-detected):**"
+            prompt += f"\n- Total inline citations found: {citation_count}"
+            prompt += f"\n- Unique sources cited: {len(unique_citations)}"
+            if unique_citations:
+                prompt += f"\n- Citation examples: {unique_citations[:5]}"
+
+            # Check for References section
+            has_references = "## References" in response or "References" in response
+            prompt += f"\n- Has References section: {'Yes' if has_references else 'No'}"
+
+            # Provide explicit scoring guidance based on citation count
+            prompt += "\n\n**MANDATORY SCORING GUIDE (follow exactly):**"
+            if citation_count >= 10 and len(unique_citations) >= 6:
+                prompt += f"\n- Found {citation_count} citations with {len(unique_citations)} unique sources → SCORE = 1.0"
+            elif citation_count >= 8 and len(unique_citations) >= 5:
+                prompt += f"\n- Found {citation_count} citations with {len(unique_citations)} unique sources → SCORE = 0.9"
+            elif citation_count >= 6 and len(unique_citations) >= 4:
+                prompt += f"\n- Found {citation_count} citations with {len(unique_citations)} unique sources → SCORE = 0.85"
+            elif citation_count >= 5 and len(unique_citations) >= 3:
+                prompt += f"\n- Found {citation_count} citations with {len(unique_citations)} unique sources → SCORE = 0.8"
+            elif citation_count >= 3:
+                prompt += f"\n- Found {citation_count} citations with {len(unique_citations)} unique sources → SCORE = 0.7"
+            else:
+                prompt += f"\n- Found {citation_count} citations with {len(unique_citations)} unique sources → SCORE = 0.6 or lower"
+
+            prompt += "\n\nYOU MUST USE THE SCORE FROM THE MANDATORY SCORING GUIDE ABOVE. Do not deviate."
+
+        # For factual_accuracy, add guidance about cited claims
+        if criterion_name == "factual_accuracy":
+            import re
+            # Count inline citations
+            citation_pattern = r'\[([A-Z][a-z]+(?:\s+(?:et al\.|&\s+[A-Z][a-z]+))?),?\s*\d{4}\]'
+            citations = re.findall(citation_pattern, response)
+            citation_count = len(citations)
+
+            prompt += f"\n\n**IMPORTANT FACTUAL ACCURACY SCORING GUIDANCE:**"
+            prompt += f"\n- Claims supported by inline citations [Author, Year] should be treated as VERIFIED"
+            prompt += f"\n- This response has {citation_count} inline citations"
+            prompt += f"\n- Only flag claims as 'unverifiable' if they have NO citation support"
+            prompt += f"\n- If most claims have citation support, score should be >= 0.85"
+            prompt += f"\n- DO NOT penalize for 'unverifiable claims' if those claims have proper citations"
 
         if ground_truth:
-            prompt += f"\n\nExpected Response:\n{ground_truth}"
+            prompt += f"\n**Ground Truth / Expected Answer:**\n{ground_truth}"
 
         prompt += """
 
-Please evaluate the response on a scale of 0.0 to 1.0 for this criterion.
-Provide your evaluation in the following JSON format:
+---
+
+## EVALUATION INSTRUCTIONS
+
+1. Carefully read the response and compare against the rubric anchors
+2. Identify which score anchor (1.0, 0.9, 0.8, etc.) best matches the response quality
+3. Consider the evaluation questions when making your assessment
+4. Be objective and consistent - use the rubric anchors as your primary guide
+
+## OUTPUT FORMAT (JSON only)
+
+Respond with ONLY valid JSON in this exact format:
+```json
 {
-    "score": <float between 0.0 and 1.0>,
-    "reasoning": "<detailed explanation of your score>"
+    "score": <float between 0.0 and 1.0 matching rubric anchors>,
+    "reasoning": "<2-3 sentences explaining your score based on the rubric>",
+    "rubric_match": "<which rubric anchor score (e.g., '0.8') best matches>"
 }
+```
 """
 
         return prompt
@@ -232,7 +315,7 @@ Provide your evaluation in the following JSON format:
         """
         if not self.client:
             raise ValueError("OpenAI client not initialized. Check OPENAI_API_KEY environment variable.")
-        
+
         try:
             # Load model settings from config.yaml (models.judge)
             model_name = self.model_config.get("name", "gpt-4o-mini")
@@ -241,9 +324,10 @@ Provide your evaluation in the following JSON format:
 
             self.logger.debug(f"Calling OpenAI API with model: {model_name}")
 
-            # Call OpenAI API for evaluation
-            chat_completion = self.client.chat.completions.create(
-                messages=[
+            # Build API parameters - handle different model requirements
+            # o1 and o3 models require max_completion_tokens instead of max_tokens
+            api_params = {
+                "messages": [
                     {
                         "role": "system",
                         "content": "You are an expert evaluator. Provide your evaluations in valid JSON format."
@@ -253,10 +337,19 @@ Provide your evaluation in the following JSON format:
                         "content": prompt
                     }
                 ],
-                model=model_name,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
+                "model": model_name,
+            }
+
+            # Check if model requires max_completion_tokens (o1, o3 models)
+            if model_name.startswith("o1") or model_name.startswith("o3"):
+                api_params["max_completion_tokens"] = max_tokens
+                # o1/o3 models don't support temperature parameter
+            else:
+                api_params["max_tokens"] = max_tokens
+                api_params["temperature"] = temperature
+
+            # Call OpenAI API for evaluation
+            chat_completion = self.client.chat.completions.create(**api_params)
             
             response = chat_completion.choices[0].message.content
             self.logger.debug(f"Received response: {response[:100]}...")

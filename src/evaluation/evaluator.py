@@ -432,7 +432,8 @@ async def example_with_orchestrator():
     # TODO: YOUR CODE HERE
     # Replace this with their actual orchestrator
     try:
-        from src.langgraph_orchestrator import LangGraphOrchestrator
+        # Import from merged orchestrator file (LangGraph code merged into autogen_orchestrator.py)
+        from src.autogen_orchestrator import LangGraphOrchestrator
         orchestrator = LangGraphOrchestrator(config)
         print("\nOrchestrator initialized successfully")
     except Exception as e:

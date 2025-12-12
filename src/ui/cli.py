@@ -16,7 +16,8 @@ import yaml
 import logging
 from dotenv import load_dotenv
 
-from src.langgraph_orchestrator import LangGraphOrchestrator
+# Import from merged orchestrator file (LangGraph code merged into autogen_orchestrator.py)
+from src.autogen_orchestrator import LangGraphOrchestrator
 
 # Load environment variables
 load_dotenv()
