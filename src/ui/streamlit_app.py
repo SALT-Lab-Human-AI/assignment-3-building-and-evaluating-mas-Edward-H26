@@ -1655,32 +1655,36 @@ def main():
         """, unsafe_allow_html=True)
 
     with col_center:
-        query = st.text_area(
-            "Enter your research query:",
-            height=100,
-            placeholder="e.g., What are the latest developments in explainable AI for novice users?",
-            key="query_input"
-        )
+        # Form wrapper enables Ctrl+Enter to submit
+        with st.form(key="query_form", clear_on_submit=False):
+            query = st.text_area(
+                "Enter your research query:",
+                height=100,
+                placeholder="e.g., What are the latest developments in explainable AI for novice users?",
+                key="query_input"
+            )
 
-        # Submit button
-        if st.button("🔍 Search", type="primary", use_container_width=True):
-            if query.strip():
-                with st.spinner("Processing your query..."):
-                    # Process query
-                    result = asyncio.run(process_query(query))
+            # Submit button (form_submit_button supports Ctrl+Enter)
+            submitted = st.form_submit_button("🔍 Search", type="primary", use_container_width=True)
 
-                    # Add to history
-                    st.session_state.history.append({
-                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "query": query,
-                        "result": result
-                    })
+            if submitted:
+                if query.strip():
+                    with st.spinner("Processing your query..."):
+                        # Process query
+                        result = asyncio.run(process_query(query))
 
-                    # Display result
-                    st.divider()
-                    display_response(result)
-            else:
-                st.warning("Please enter a query.")
+                        # Add to history
+                        st.session_state.history.append({
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "query": query,
+                            "result": result
+                        })
+
+                        # Display result
+                        st.divider()
+                        display_response(result)
+                else:
+                    st.warning("Please enter a query.")
 
         # History
         display_history()
