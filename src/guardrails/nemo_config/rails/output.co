@@ -1,0 +1,69 @@
+# Output Rails for HCI Research Assistant
+# These rails check AI responses before sending to user
+
+# =============================================================================
+# 1. OUTPUT MODERATION
+# Ensure responses don't contain harmful content
+# =============================================================================
+
+define flow check output moderation
+  bot responds with harmful content
+  $is_harmful = call check_harmful_content($response)
+  if $is_harmful
+    bot provide safe response
+
+define bot provide safe response
+  "I apologize, but I need to provide a safer response. Let me rephrase my answer to focus on helpful, accurate HCI research information."
+
+# =============================================================================
+# 2. FACTUAL GROUNDING CHECK
+# Flag potentially inaccurate or unsupported claims
+# =============================================================================
+
+define flow check factual grounding
+  bot responds with claims
+  $needs_disclaimer = call check_factual_grounding($response)
+  if $needs_disclaimer
+    bot add uncertainty disclaimer
+
+define bot add uncertainty disclaimer
+  "[Note: Some information in this response may benefit from verification with primary sources. I've aimed to provide accurate information based on established HCI research, but please consult original sources for critical applications.]"
+
+# =============================================================================
+# 3. PII DETECTION AND REDACTION
+# Detect and redact personal information from responses
+# =============================================================================
+
+define flow check pii
+  bot responds
+  $has_pii = call detect_pii($response)
+  if $has_pii
+    $response = call redact_pii($response)
+
+# =============================================================================
+# 4. CITATION CHECK
+# Ensure academic claims have proper attribution
+# =============================================================================
+
+define flow check citations
+  bot responds with academic claims
+  $has_citations = call check_citations($response)
+  if not $has_citations
+    bot request citation addition
+
+define bot request citation addition
+  "[This response contains claims that would benefit from academic citations. In HCI research, proper attribution to original sources is important for academic integrity.]"
+
+# =============================================================================
+# 5. RESPONSE QUALITY CHECK
+# Ensure responses meet quality standards
+# =============================================================================
+
+define flow check response quality
+  bot responds
+  $quality_score = call assess_response_quality($response)
+  if $quality_score < 0.5
+    bot improve response quality
+
+define bot improve response quality
+  "Let me provide a more detailed and well-structured response to better address your question."

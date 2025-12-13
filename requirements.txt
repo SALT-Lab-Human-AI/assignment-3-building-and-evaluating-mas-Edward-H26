@@ -1,10 +1,8 @@
-autogen-agentchat
-autogen-ext[openai,groq]
-
 langgraph
 langchain
 langchain-core
 langchain-community
+langchain-openai
 
 groq
 openai
@@ -35,5 +33,5 @@ black
 # Pre-commit hooks for security and code quality
 pre-commit
 detect-secrets
-gitleaks
+# gitleaks - removed (binary tool, not a pip package)
 bandit

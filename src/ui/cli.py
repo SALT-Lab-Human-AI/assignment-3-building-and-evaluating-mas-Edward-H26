@@ -16,7 +16,8 @@ import yaml
 import logging
 from dotenv import load_dotenv
 
-from src.autogen_orchestrator import AutoGenOrchestrator
+# Import from merged orchestrator file (LangGraph code merged into autogen_orchestrator.py)
+from src.autogen_orchestrator import LangGraphOrchestrator
 
 # Load environment variables
 load_dotenv()
@@ -48,11 +49,10 @@ class CLI:
         # Setup logging
         self._setup_logging()
 
-        # Initialize AutoGen orchestrator
         try:
-            self.orchestrator = AutoGenOrchestrator(self.config)
+            self.orchestrator = LangGraphOrchestrator(self.config)
             self.logger = logging.getLogger("cli")
-            self.logger.info("AutoGen orchestrator initialized successfully")
+            self.logger.info("LangGraph orchestrator initialized successfully")
         except Exception as e:
             self.logger = logging.getLogger("cli")
             self.logger.error(f"Failed to initialize orchestrator: {e}")
@@ -110,11 +110,6 @@ class CLI:
                     self._print_stats()
                     continue
 
-                # Process query
-                print("\n" + "=" * 70)
-                print("Processing your query...")
-                print("=" * 70)
-                
                 try:
                     # Process through orchestrator (synchronous call, not async)
                     result = self.orchestrator.process_query(query)
@@ -137,10 +132,8 @@ class CLI:
 
     def _print_welcome(self):
         """Print welcome message."""
-        print("=" * 70)
-        print(f"  {self.config['system']['name']}")
-        print(f"  Topic: {self.config['system']['topic']}")
-        print("=" * 70)
+        print(f"{self.config['system']['name']}")
+        print(f"Topic: {self.config['system']['topic']}")
         print("\nWelcome! Ask me anything about your research topic.")
         print("Type 'help' for available commands, or 'quit' to exit.\n")
 
@@ -173,9 +166,6 @@ class CLI:
 
     def _display_result(self, result: Dict[str, Any]):
         """Display query result with formatting."""
-        print("\n" + "=" * 70)
-        print("RESPONSE")
-        print("=" * 70)
 
         # Check for errors
         if "error" in result:
@@ -189,27 +179,21 @@ class CLI:
         # Extract and display citations from conversation
         citations = self._extract_citations(result)
         if citations:
-            print("\n" + "-" * 70)
-            print("📚 CITATIONS")
-            print("-" * 70)
+            print("\nCitations:")
             for i, citation in enumerate(citations, 1):
-                print(f"[{i}] {citation}")
+                print(f"  [{i}] {citation}")
 
         # Display metadata
         metadata = result.get("metadata", {})
         if metadata:
-            print("\n" + "-" * 70)
-            print("📊 METADATA")
-            print("-" * 70)
-            print(f"  • Messages exchanged: {metadata.get('num_messages', 0)}")
-            print(f"  • Sources gathered: {metadata.get('num_sources', 0)}")
-            print(f"  • Agents involved: {', '.join(metadata.get('agents_involved', []))}")
+            print("\nMetadata:")
+            print(f"  Messages: {metadata.get('num_messages', 0)}")
+            print(f"  Sources: {metadata.get('num_sources', 0)}")
+            print(f"  Agents: {', '.join(metadata.get('agents_involved', []))}")
 
         # Display conversation summary if verbose mode
         if self._should_show_traces():
             self._display_conversation_summary(result.get("conversation_history", []))
-
-        print("=" * 70 + "\n")
     
     def _extract_citations(self, result: Dict[str, Any]) -> list:
         """Extract citations/URLs from conversation history."""
@@ -237,24 +221,17 @@ class CLI:
         """Display a summary of the agent conversation."""
         if not conversation_history:
             return
-            
-        print("\n" + "-" * 70)
-        print("🔍 CONVERSATION SUMMARY")
-        print("-" * 70)
-        
+
+        print("\nConversation Summary:")
         for i, msg in enumerate(conversation_history, 1):
             agent = msg.get("source", "Unknown")
             content = msg.get("content", "")
-            
-            # Truncate long content
             preview = content[:150] + "..." if len(content) > 150 else content
             preview = preview.replace("\n", " ")
-            
-            print(f"\n{i}. {agent}:")
-            print(f"   {preview}")
+            print(f"  {i}. {agent}: {preview}")
 
 
-def main():
+def main(argv=None):
     """Main entry point for CLI."""
     import argparse
 
@@ -267,7 +244,8 @@ def main():
         help="Path to configuration file"
     )
 
-    args = parser.parse_args()
+    # Accept argv override so callers (e.g., main.py) can strip unrelated args
+    args, _ = parser.parse_known_args(argv)
 
     # Run CLI
     cli = CLI(config_path=args.config)

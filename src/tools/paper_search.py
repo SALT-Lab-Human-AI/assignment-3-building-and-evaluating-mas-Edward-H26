@@ -9,8 +9,30 @@ of academic papers.
 
 from typing import List, Dict, Any, Optional
 import os
+import time
 import logging
 import asyncio
+import requests
+from datetime import datetime
+
+
+# HCI-relevant venues for filtering search results
+HCI_VENUES = [
+    "CHI", "UIST", "CSCW", "DIS", "IUI", "MobileHCI",
+    "UbiComp", "INTERACT", "NordiCHI", "OzCHI",
+    "Human-Computer Interaction", "ACM Computing Surveys",
+    "International Journal of Human-Computer Studies",
+    "Proceedings of the ACM on Human-Computer Interaction",
+    "ACM Transactions on Computer-Human Interaction",
+    "TOCHI", "IEEE VR", "ISMAR", "TEI", "IDC"
+]
+
+# HCI-relevant keywords for title/abstract filtering
+HCI_KEYWORDS = [
+    "hci", "human-computer interaction", "user interface", "usability",
+    "user experience", "ux", "accessibility", "interaction design",
+    "user study", "user research", "interface design", "human factors"
+]
 
 
 class PaperSearchTool:
@@ -34,6 +56,12 @@ class PaperSearchTool:
 
         # API key is optional for Semantic Scholar
         self.api_key = os.getenv("SEMANTIC_SCHOLAR_API_KEY")
+        self.base_url = "https://api.semanticscholar.org/graph/v1/paper/search"
+        # Respect documented rate limit (default 1 req/sec unless key allows more)
+        self.min_request_interval = float(os.getenv("SEMANTIC_SCHOLAR_REQUEST_INTERVAL", "1.0"))
+        self.page_size = min(max_results, 20) if max_results > 0 else 10
+        self._last_request_time = 0.0
+        self._session = requests.Session()
         
         if not self.api_key:
             self.logger.info("No Semantic Scholar API key found. Using anonymous access (lower rate limits)")
@@ -73,37 +101,42 @@ class PaperSearchTool:
         """
         self.logger.info(f"Searching papers: {query}")
 
-        try:
-            from semanticscholar import SemanticScholar
-            
-            # Initialize Semantic Scholar client
-            sch = SemanticScholar(api_key=self.api_key)
-            
-            # Define fields to retrieve
-            fields = kwargs.get("fields", [
-                "paperId", "title", "authors", "year", "abstract",
-                "citationCount", "url", "venue", "openAccessPdf"
-            ])
-            
-            # Perform search
-            results = sch.search_paper(
-                query, 
-                limit=self.max_results,
-                fields=fields
-            )
-            
-            # Parse and filter results
-            papers = self._parse_results(results, year_from, year_to, min_citations)
-            
-            self.logger.info(f"Found {len(papers)} papers")
-            return papers
-            
-        except ImportError:
-            self.logger.error("semanticscholar library not installed. Run: pip install semanticscholar")
-            return []
-        except Exception as e:
-            self.logger.error(f"Error searching papers: {e}")
-            return []
+        fields = kwargs.get("fields", [
+            "paperId", "title", "authors", "year", "abstract",
+            "citationCount", "url", "venue", "openAccessPdf"
+        ])
+
+        papers: List[Dict[str, Any]] = []
+        seen_ids = set()
+        offset = 0
+
+        while len(papers) < self.max_results:
+            remaining = self.max_results - len(papers)
+            page_limit = min(self.page_size, remaining)
+            page = self._fetch_page(query, fields, offset, page_limit)
+
+            if page is None:
+                # Stop on hard errors
+                break
+            if not page:
+                # No more results
+                break
+
+            parsed = self._parse_results(page, year_from, year_to, min_citations, query)
+
+            for p in parsed:
+                pid = p.get("paper_id")
+                if pid and pid in seen_ids:
+                    continue
+                seen_ids.add(pid)
+                papers.append(p)
+                if len(papers) >= self.max_results:
+                    break
+
+            offset += page_limit
+
+        self.logger.info(f"Found {len(papers)} papers")
+        return papers
 
     async def get_paper_details(self, paper_id: str) -> Dict[str, Any]:
         """
@@ -201,45 +234,59 @@ class PaperSearchTool:
         results: Any,
         year_from: Optional[int],
         year_to: Optional[int],
-        min_citations: int
+        min_citations: int,
+        query: str = ""
     ) -> List[Dict[str, Any]]:
         """
-        Parse and filter search results from Semantic Scholar.
-        
+        Parse, filter, and rank search results from Semantic Scholar.
+
         Args:
             results: Raw results from Semantic Scholar API
             year_from: Minimum year filter
             year_to: Maximum year filter
             min_citations: Minimum citation count filter
-            
+            query: Original search query (for quality scoring)
+
         Returns:
-            Filtered and formatted list of papers
+            Filtered, scored, and sorted list of papers
         """
         papers = []
-        
+
         for paper in results:
             # Skip papers without basic metadata
-            if not paper or not hasattr(paper, 'title'):
+            if not paper:
                 continue
-                
+
+            get_attr = paper.get if isinstance(paper, dict) else lambda key, default=None: getattr(paper, key, default)
+
             paper_dict = {
-                "paper_id": paper.paperId if hasattr(paper, 'paperId') else None,
-                "title": paper.title if hasattr(paper, 'title') else "Unknown",
-                "authors": [{"name": a.name} for a in paper.authors] if hasattr(paper, 'authors') and paper.authors else [],
-                "year": paper.year if hasattr(paper, 'year') else None,
-                "abstract": paper.abstract if hasattr(paper, 'abstract') else "",
-                "citation_count": paper.citationCount if hasattr(paper, 'citationCount') else 0,
-                "url": paper.url if hasattr(paper, 'url') else "",
-                "venue": paper.venue if hasattr(paper, 'venue') else "",
-                "pdf_url": paper.openAccessPdf.get("url") if hasattr(paper, 'openAccessPdf') and paper.openAccessPdf else None,
+                "paper_id": get_attr("paperId"),
+                "title": get_attr("title", "Unknown"),
+                "authors": [{"name": a.get("name")} for a in get_attr("authors", []) if isinstance(a, dict)],
+                "year": get_attr("year"),
+                "abstract": get_attr("abstract", ""),
+                "citation_count": get_attr("citationCount", 0),
+                "url": get_attr("url", ""),
+                "venue": get_attr("venue", ""),
+                "pdf_url": (get_attr("openAccessPdf") or {}).get("url") if isinstance(get_attr("openAccessPdf"), dict) else None,
             }
-            
+
+            # Add HCI relevance flag and quality score
+            paper_dict["is_hci_relevant"] = self._is_hci_relevant(paper_dict)
+            if query:
+                paper_dict["quality_score"] = self._calculate_quality_score(paper_dict, query)
+            else:
+                paper_dict["quality_score"] = 0.0
+
             papers.append(paper_dict)
-        
+
         # Apply filters
         papers = self._filter_by_year(papers, year_from, year_to)
         papers = self._filter_by_citations(papers, min_citations)
-        
+
+        # Sort by quality score (highest first)
+        papers.sort(key=lambda x: x.get("quality_score", 0), reverse=True)
+
         return papers
 
     def _filter_by_year(
@@ -264,11 +311,134 @@ class PaperSearchTool:
         """Filter papers by citation count."""
         return [p for p in papers if p.get("citation_count", 0) >= min_citations]
 
+    def _is_hci_relevant(self, paper: Dict[str, Any]) -> bool:
+        """
+        Check if paper is HCI-relevant by venue or keywords.
 
-# Synchronous wrapper for use with AutoGen tools
+        Args:
+            paper: Paper dictionary with venue, title, abstract fields
+
+        Returns:
+            True if paper appears HCI-relevant
+        """
+        venue = (paper.get("venue") or "").lower()
+        title = (paper.get("title") or "").lower()
+        abstract = (paper.get("abstract") or "").lower()
+
+        # Check venue matches
+        for hci_venue in HCI_VENUES:
+            if hci_venue.lower() in venue:
+                return True
+
+        # Check HCI keywords in title or abstract
+        text = f"{title} {abstract}"
+        for keyword in HCI_KEYWORDS:
+            if keyword in text:
+                return True
+
+        return False
+
+    def _calculate_quality_score(self, paper: Dict[str, Any], query: str) -> float:
+        """
+        Calculate relevance and quality score for a paper.
+
+        Args:
+            paper: Paper dictionary
+            query: Original search query
+
+        Returns:
+            Score between 0.0 and 1.0
+        """
+        score = 0.0
+
+        # Citation score (0-0.3) - more citations = higher quality
+        citations = paper.get("citation_count", 0) or 0
+        score += min(0.3, citations / 100)
+
+        # Recency score (0-0.2) - newer papers get higher scores
+        year = paper.get("year") or 2000
+        current_year = datetime.now().year
+        years_old = current_year - year
+        score += max(0, 0.2 - (years_old * 0.02))
+
+        # Title relevance (0-0.3) - query word overlap with title
+        query_words = set(query.lower().split())
+        title_words = set((paper.get("title") or "").lower().split())
+        overlap = len(query_words & title_words)
+        score += min(0.3, overlap * 0.1)
+
+        # HCI venue bonus (0-0.2)
+        if self._is_hci_relevant(paper):
+            score += 0.2
+
+        return min(1.0, score)
+
+    def _respect_rate_limit(self):
+        """Sleep to enforce the minimum interval between API calls."""
+        elapsed = time.time() - self._last_request_time
+        wait_for = self.min_request_interval - elapsed
+        if wait_for > 0:
+            time.sleep(wait_for)
+
+    def _fetch_page(
+        self,
+        query: str,
+        fields: List[str],
+        offset: int,
+        limit: int
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Fetch a single page from Semantic Scholar with backoff on 429."""
+        params = {
+            "query": query,
+            "fields": ",".join(fields),
+            "offset": offset,
+            "limit": limit,
+        }
+        headers = {"Accept": "application/json"}
+        if self.api_key:
+            headers["x-api-key"] = self.api_key
+
+        retries = 3
+        for attempt in range(retries):
+            self._respect_rate_limit()
+            try:
+                resp = self._session.get(
+                    self.base_url,
+                    params=params,
+                    headers=headers,
+                    timeout=15,
+                )
+                self._last_request_time = time.time()
+            except Exception as e:
+                self.logger.error(f"Request error contacting Semantic Scholar: {e}")
+                return None
+
+            if resp.status_code == 429:
+                retry_after = resp.headers.get("Retry-After")
+                sleep_seconds = float(retry_after) if retry_after else max(1.0, 2 ** attempt)
+                self.logger.warning(f"Rate limited by Semantic Scholar (429). Sleeping {sleep_seconds:.1f}s before retry...")
+                time.sleep(sleep_seconds)
+                continue
+
+            if not resp.ok:
+                self.logger.error(f"Semantic Scholar returned {resp.status_code}: {resp.text}")
+                return None
+
+            try:
+                data = resp.json()
+            except Exception as e:
+                self.logger.error(f"Failed to parse Semantic Scholar response: {e}")
+                return None
+
+            return data.get("data", [])
+
+        self.logger.error("Exceeded retry attempts for Semantic Scholar request")
+        return None
+
+
 def paper_search(query: str, max_results: int = 10, year_from: Optional[int] = None) -> str:
     """
-    Synchronous wrapper for paper search (for AutoGen tool integration).
+    Synchronous wrapper for paper search.
     
     Args:
         query: Search query

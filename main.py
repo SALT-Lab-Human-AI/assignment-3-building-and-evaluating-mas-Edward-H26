@@ -6,6 +6,7 @@ Usage:
   python main.py --mode cli           # Run CLI interface
   python main.py --mode web           # Run web interface
   python main.py --mode evaluate      # Run evaluation
+  python main.py --mode langgraph     # Run LangGraph orchestrator (Novel Architecture)
 """
 
 import argparse
@@ -14,65 +15,75 @@ import sys
 from pathlib import Path
 
 
-def run_cli():
+def run_cli(config_path: str):
     """Run CLI interface."""
     from src.ui.cli import main as cli_main
-    cli_main()
+    cli_main(argv=["--config", config_path])
 
 
 def run_web():
     """Run web interface."""
     import subprocess
-    print("Starting Streamlit web interface...")
     subprocess.run(["streamlit", "run", "src/ui/streamlit_app.py"])
 
 
-async def run_evaluation():
+async def run_evaluation(config_path: str):
     """Run system evaluation."""
     import yaml
     from dotenv import load_dotenv
-    from src.autogen_orchestrator import AutoGenOrchestrator
+    from src.langgraph_orchestrator import LangGraphOrchestrator
+
+    load_dotenv()
+
+    with open(config_path, "r") as f:
+        config = yaml.safe_load(f)
+
+    orchestrator = LangGraphOrchestrator(config)
     
+    test_query = "What are the key principles of accessible user interface design?"
+    result = orchestrator.process_query(test_query)
+    return result
+
+
+def run_langgraph(config_path: str):
+    """
+    Run LangGraph orchestrator with novel architecture.
+
+    Features three innovations:
+    1. Reflexion-Based Self-Correcting Agents
+    2. Hierarchical Supervisor with Parallel Tool Execution
+    3. Human-in-the-Loop Evaluation Triangulation
+    """
+    import yaml
+    from dotenv import load_dotenv
+    from src.langgraph_orchestrator import LangGraphOrchestrator
+
     # Load environment variables
     load_dotenv()
 
-    # Load config
-    with open("config.yaml", 'r') as f:
+    with open(config_path, "r") as f:
         config = yaml.safe_load(f)
 
-    # Initialize AutoGen orchestrator
-    print("Initializing AutoGen orchestrator...")
-    orchestrator = AutoGenOrchestrator(config)
-    
-    # For now, run a simple test query
-    # TODO: Integrate with SystemEvaluator for full evaluation
-    print("\n" + "=" * 70)
-    print("RUNNING TEST QUERY")
-    print("=" * 70)
-    
-    test_query = "What are the key principles of accessible user interface design?"
-    print(f"\nQuery: {test_query}\n")
-    
-    result = orchestrator.process_query(test_query)
-    
-    print("\n" + "=" * 70)
-    print("RESULTS")
-    print("=" * 70)
-    print(f"\nResponse:\n{result.get('response', 'No response generated')}")
-    print(f"\nMetadata:")
-    print(f"  - Messages: {result.get('metadata', {}).get('num_messages', 0)}")
-    print(f"  - Sources: {result.get('metadata', {}).get('num_sources', 0)}")
-    
-    print("\n" + "=" * 70)
-    print("Note: Full evaluation with SystemEvaluator can be implemented")
-    print("=" * 70)
+    orchestrator = LangGraphOrchestrator(config)
 
+    while True:
+        try:
+            query = input("\nQuery: ").strip()
 
-def run_autogen():
-    """Run AutoGen example."""
-    import subprocess
-    print("Running AutoGen example...")
-    subprocess.run([sys.executable, "example_autogen.py"])
+            if query.lower() in ["quit", "exit", "q"]:
+                break
+
+            if not query:
+                continue
+
+            result = orchestrator.process_query(query)
+
+        except KeyboardInterrupt:
+            break
+        except Exception as e:
+            continue
+
+    return
 
 
 def main():
@@ -82,9 +93,9 @@ def main():
     )
     parser.add_argument(
         "--mode",
-        choices=["cli", "web", "evaluate", "autogen"],
-        default="autogen",
-        help="Mode to run: cli, web, evaluate, or autogen (default)"
+        choices=["cli", "web", "evaluate", "langgraph"],
+        default="langgraph",
+        help="Mode to run: cli, web, evaluate, or langgraph (default)"
     )
     parser.add_argument(
         "--config",
@@ -95,13 +106,13 @@ def main():
     args = parser.parse_args()
 
     if args.mode == "cli":
-        run_cli()
+        run_cli(args.config)
     elif args.mode == "web":
         run_web()
     elif args.mode == "evaluate":
-        asyncio.run(run_evaluation())
-    elif args.mode == "autogen":
-        run_autogen()
+        asyncio.run(run_evaluation(args.config))
+    elif args.mode == "langgraph":
+        run_langgraph(args.config)
 
 
 if __name__ == "__main__":

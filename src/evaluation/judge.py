@@ -22,7 +22,8 @@ from typing import Dict, Any, List, Optional
 import logging
 import json
 import os
-from groq import Groq
+from openai import OpenAI
+from .rubrics import get_rubric_prompt, EVALUATION_RUBRICS
 
 
 class LLMJudge:
@@ -55,11 +56,11 @@ class LLMJudge:
         # Each criterion has: name, weight, description
         self.criteria = config.get("evaluation", {}).get("criteria", [])
         
-        # Initialize Groq client (similar to what we tried in Lab 5)
-        api_key = os.getenv("GROQ_API_KEY")
+        # Initialize OpenAI client for LLM-as-a-Judge evaluation
+        api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
-            self.logger.warning("GROQ_API_KEY not found in environment")
-        self.client = Groq(api_key=api_key) if api_key else None
+            self.logger.warning("OPENAI_API_KEY not found in environment")
+        self.client = OpenAI(api_key=api_key) if api_key else None
         
         self.logger.info(f"LLMJudge initialized with {len(self.criteria)} criteria")
  
@@ -190,37 +191,119 @@ class LLMJudge:
         ground_truth: Optional[str]
     ) -> str:
         """
-        Create a prompt for the judge LLM.
+        Create a prompt for the judge LLM with detailed rubrics.
 
-        TODO: YOUR CODE HERE
-        - Create effective judge prompts
-        - Include clear scoring rubric
-        - Provide examples if helpful
+        Uses rubric-based scoring anchors from rubrics.py for consistent evaluation.
         """
-        prompt = f"""You are an expert evaluator. Evaluate the following response based on the criterion: {criterion_name}.
+        # Get detailed rubric for this criterion
+        rubric_text = get_rubric_prompt(criterion_name)
 
-Criterion Description: {description}
+        prompt = f"""You are an expert HCI research evaluator. Your task is to evaluate responses based on specific criteria with detailed rubrics.
 
-Query: {query}
+# EVALUATION TASK
 
-Response:
+## Criterion: {criterion_name.replace('_', ' ').title()}
+{description}
+
+{rubric_text}
+
+---
+
+## Content to Evaluate
+
+**Original Query:**
+{query}
+
+**Response to Evaluate:**
 {response}
 """
 
         if sources:
-            prompt += f"\n\nSources Used: {len(sources)} sources"
+            # Provide source details if available
+            source_count = len(sources) if isinstance(sources, list) else 0
+            prompt += f"\n**Sources Provided:** {source_count} sources"
+            if source_count > 0 and isinstance(sources[0], dict):
+                prompt += "\n"
+                for i, s in enumerate(sources[:5], 1):
+                    if isinstance(s, dict):
+                        title = s.get('title', s.get('name', 'Unknown'))
+                        prompt += f"  {i}. {title}\n"
+
+        # For evidence_quality, analyze inline citations in the response
+        if criterion_name == "evidence_quality":
+            import re
+            # Count inline citations [Author, Year] format
+            citation_pattern = r'\[([A-Z][a-z]+(?:\s+(?:et al\.|&\s+[A-Z][a-z]+))?),?\s*\d{4}\]'
+            citations = re.findall(citation_pattern, response)
+            citation_count = len(citations)
+            unique_citations = list(set(citations))
+
+            prompt += f"\n\n**Citation Analysis (Auto-detected):**"
+            prompt += f"\n- Total inline citations found: {citation_count}"
+            prompt += f"\n- Unique sources cited: {len(unique_citations)}"
+            if unique_citations:
+                prompt += f"\n- Citation examples: {unique_citations[:5]}"
+
+            # Check for References section
+            has_references = "## References" in response or "References" in response
+            prompt += f"\n- Has References section: {'Yes' if has_references else 'No'}"
+
+            # Provide explicit scoring guidance based on citation count
+            prompt += "\n\n**MANDATORY SCORING GUIDE (follow exactly):**"
+            if citation_count >= 10 and len(unique_citations) >= 6:
+                prompt += f"\n- Found {citation_count} citations with {len(unique_citations)} unique sources → SCORE = 1.0"
+            elif citation_count >= 8 and len(unique_citations) >= 5:
+                prompt += f"\n- Found {citation_count} citations with {len(unique_citations)} unique sources → SCORE = 0.9"
+            elif citation_count >= 6 and len(unique_citations) >= 4:
+                prompt += f"\n- Found {citation_count} citations with {len(unique_citations)} unique sources → SCORE = 0.85"
+            elif citation_count >= 5 and len(unique_citations) >= 3:
+                prompt += f"\n- Found {citation_count} citations with {len(unique_citations)} unique sources → SCORE = 0.8"
+            elif citation_count >= 3:
+                prompt += f"\n- Found {citation_count} citations with {len(unique_citations)} unique sources → SCORE = 0.7"
+            else:
+                prompt += f"\n- Found {citation_count} citations with {len(unique_citations)} unique sources → SCORE = 0.6 or lower"
+
+            prompt += "\n\nYOU MUST USE THE SCORE FROM THE MANDATORY SCORING GUIDE ABOVE. Do not deviate."
+
+        # For factual_accuracy, add guidance about cited claims
+        if criterion_name == "factual_accuracy":
+            import re
+            # Count inline citations
+            citation_pattern = r'\[([A-Z][a-z]+(?:\s+(?:et al\.|&\s+[A-Z][a-z]+))?),?\s*\d{4}\]'
+            citations = re.findall(citation_pattern, response)
+            citation_count = len(citations)
+
+            prompt += f"\n\n**IMPORTANT FACTUAL ACCURACY SCORING GUIDANCE:**"
+            prompt += f"\n- Claims supported by inline citations [Author, Year] should be treated as VERIFIED"
+            prompt += f"\n- This response has {citation_count} inline citations"
+            prompt += f"\n- Only flag claims as 'unverifiable' if they have NO citation support"
+            prompt += f"\n- If most claims have citation support, score should be >= 0.85"
+            prompt += f"\n- DO NOT penalize for 'unverifiable claims' if those claims have proper citations"
 
         if ground_truth:
-            prompt += f"\n\nExpected Response:\n{ground_truth}"
+            prompt += f"\n**Ground Truth / Expected Answer:**\n{ground_truth}"
 
         prompt += """
 
-Please evaluate the response on a scale of 0.0 to 1.0 for this criterion.
-Provide your evaluation in the following JSON format:
+---
+
+## EVALUATION INSTRUCTIONS
+
+1. Carefully read the response and compare against the rubric anchors
+2. Identify which score anchor (1.0, 0.9, 0.8, etc.) best matches the response quality
+3. Consider the evaluation questions when making your assessment
+4. Be objective and consistent - use the rubric anchors as your primary guide
+
+## OUTPUT FORMAT (JSON only)
+
+Respond with ONLY valid JSON in this exact format:
+```json
 {
-    "score": <float between 0.0 and 1.0>,
-    "reasoning": "<detailed explanation of your score>"
+    "score": <float between 0.0 and 1.0 matching rubric anchors>,
+    "reasoning": "<2-3 sentences explaining your score based on the rubric>",
+    "rubric_match": "<which rubric anchor score (e.g., '0.8') best matches>"
 }
+```
 """
 
         return prompt
@@ -231,19 +314,20 @@ Provide your evaluation in the following JSON format:
         Uses model configuration from config.yaml (models.judge section).
         """
         if not self.client:
-            raise ValueError("Groq client not initialized. Check GROQ_API_KEY environment variable.")
-        
+            raise ValueError("OpenAI client not initialized. Check OPENAI_API_KEY environment variable.")
+
         try:
             # Load model settings from config.yaml (models.judge)
-            model_name = self.model_config.get("name", "llama-3.1-8b-instant")
+            model_name = self.model_config.get("name", "gpt-4o-mini")
             temperature = self.model_config.get("temperature", 0.3)
             max_tokens = self.model_config.get("max_tokens", 1024)
-            
-            self.logger.debug(f"Calling Groq API with model: {model_name}")
-            
-            # Call Groq API (pattern from Lab 5)
-            chat_completion = self.client.chat.completions.create(
-                messages=[
+
+            self.logger.debug(f"Calling OpenAI API with model: {model_name}")
+
+            # Build API parameters - handle different model requirements
+            # o1 and o3 models require max_completion_tokens instead of max_tokens
+            api_params = {
+                "messages": [
                     {
                         "role": "system",
                         "content": "You are an expert evaluator. Provide your evaluations in valid JSON format."
@@ -253,10 +337,19 @@ Provide your evaluation in the following JSON format:
                         "content": prompt
                     }
                 ],
-                model=model_name,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
+                "model": model_name,
+            }
+
+            # Check if model requires max_completion_tokens (o1, o3 models)
+            if model_name.startswith("o1") or model_name.startswith("o3"):
+                api_params["max_completion_tokens"] = max_tokens
+                # o1/o3 models don't support temperature parameter
+            else:
+                api_params["max_tokens"] = max_tokens
+                api_params["temperature"] = temperature
+
+            # Call OpenAI API for evaluation
+            chat_completion = self.client.chat.completions.create(**api_params)
             
             response = chat_completion.choices[0].message.content
             self.logger.debug(f"Received response: {response[:100]}...")
@@ -264,7 +357,7 @@ Provide your evaluation in the following JSON format:
             return response
             
         except Exception as e:
-            self.logger.error(f"Error calling Groq API: {e}")
+            self.logger.error(f"Error calling OpenAI API: {e}")
             raise
 
     def _parse_judgment(self, judgment: str) -> tuple:
@@ -304,135 +397,63 @@ Provide your evaluation in the following JSON format:
 
 
 async def example_basic_evaluation():
-    """
-    Example 1: Basic evaluation with LLMJudge
-    
-    Usage:
-        import asyncio
-        from src.evaluation.judge import example_basic_evaluation
-        asyncio.run(example_basic_evaluation())
-    """
     import yaml
     from dotenv import load_dotenv
-    
+
     load_dotenv()
-    
-    # Load config
-    with open("config.yaml", 'r') as f:
+
+    with open("config.yaml", "r") as f:
         config = yaml.safe_load(f)
-    
-    # Initialize judge
+
     judge = LLMJudge(config)
-    
-    # Test case (similar to Lab 5)
-    print("=" * 70)
-    print("EXAMPLE 1: Basic Evaluation")
-    print("=" * 70)
-    
+
     query = "What is the capital of France?"
     response = "Paris is the capital of France. It is known for the Eiffel Tower."
     ground_truth = "Paris"
-    
-    print(f"\nQuery: {query}")
-    print(f"Response: {response}")
-    print(f"Ground Truth: {ground_truth}\n")
-    
-    # Evaluate
+
     result = await judge.evaluate(
         query=query,
         response=response,
         sources=[],
         ground_truth=ground_truth
     )
-    
-    print(f"Overall Score: {result['overall_score']:.3f}\n")
-    print("Criterion Scores:")
-    for criterion, score_data in result['criterion_scores'].items():
-        print(f"  {criterion}: {score_data['score']:.3f}")
-        print(f"    Reasoning: {score_data['reasoning'][:100]}...")
-        print()
 
 
 async def example_compare_responses():
-    """
-    Example 2: Compare multiple responses
-    
-    Usage:
-        import asyncio
-        from src.evaluation.judge import example_compare_responses
-        asyncio.run(example_compare_responses())
-    """
     import yaml
     from dotenv import load_dotenv
-    
+
     load_dotenv()
-    
-    # Load config
-    with open("config.yaml", 'r') as f:
+
+    with open("config.yaml", "r") as f:
         config = yaml.safe_load(f)
-    
-    # Initialize judge
+
     judge = LLMJudge(config)
-    
-    print("=" * 70)
-    print("EXAMPLE 2: Compare Multiple Responses")
-    print("=" * 70)
-    
+
     query = "What causes climate change?"
     ground_truth = "Climate change is primarily caused by increased greenhouse gas emissions from human activities, including burning fossil fuels, deforestation, and industrial processes."
-    
+
     responses = [
         "Climate change is primarily caused by greenhouse gas emissions from human activities.",
         "The weather changes because of natural cycles and the sun's activity.",
         "Climate change is a complex phenomenon involving multiple factors including CO2 emissions, deforestation, and industrial processes."
     ]
-    
-    print(f"\nQuery: {query}\n")
-    print(f"Ground Truth: {ground_truth}\n")
-    
+
     results = []
     for i, response in enumerate(responses, 1):
-        print(f"\n{'='*70}")
-        print(f"Response {i}:")
-        print(f"{response}")
-        print(f"{'='*70}")
-        
         result = await judge.evaluate(
             query=query,
             response=response,
             sources=[],
             ground_truth=ground_truth
         )
-        
         results.append(result)
-        
-        print(f"\nOverall Score: {result['overall_score']:.3f}")
-        print("\nCriterion Scores:")
-        for criterion, score_data in result['criterion_scores'].items():
-            print(f"  {criterion}: {score_data['score']:.3f}")
-        print()
-    
-    # Summary
-    print("\n" + "=" * 70)
-    print("SUMMARY")
-    print("=" * 70)
-    for i, result in enumerate(results, 1):
-        print(f"Response {i}: {result['overall_score']:.3f}")
-    
-    best_idx = max(range(len(results)), key=lambda i: results[i]['overall_score'])
-    print(f"\nBest Response: Response {best_idx + 1}")
+
+    best_idx = max(range(len(results)), key=lambda i: results[i]["overall_score"])
 
 
-# For direct execution
 if __name__ == "__main__":
     import asyncio
-    
-    print("Running LLMJudge Examples\n")
-    
-    # Run example 1
+
     asyncio.run(example_basic_evaluation())
-    
-    print("\n\n")
-    
-    # Run example 2
     asyncio.run(example_compare_responses())
