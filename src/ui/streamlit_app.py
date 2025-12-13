@@ -1631,23 +1631,23 @@ def main():
             <h4 style="color: #F8FAFC; margin-bottom: 1rem;">ℹ️ How It Works</h4>
             <div style="display: flex; flex-direction: column; gap: 0.5rem;">
                 <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <span style="background: #3B82F6; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 0.75rem;">1</span>
+                    <span style="background: #3B82F6; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; box-shadow: 0 0 10px #3B82F6;">1</span>
                     <span style="color: #CBD5E1;"><strong style="color: #3B82F6;">Planner</strong> breaks down query</span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <span style="background: #8B5CF6; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 0.75rem;">2</span>
+                    <span style="background: #8B5CF6; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; box-shadow: 0 0 10px #8B5CF6;">2</span>
                     <span style="color: #CBD5E1;"><strong style="color: #8B5CF6;">Researcher</strong> gathers evidence</span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <span style="background: #06B6D4; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 0.75rem;">3</span>
+                    <span style="background: #06B6D4; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; box-shadow: 0 0 10px #06B6D4;">3</span>
                     <span style="color: #CBD5E1;"><strong style="color: #06B6D4;">Writer</strong> synthesizes findings</span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <span style="background: #10B981; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 0.75rem;">4</span>
+                    <span style="background: #10B981; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; box-shadow: 0 0 10px #10B981;">4</span>
                     <span style="color: #CBD5E1;"><strong style="color: #10B981;">Critic</strong> verifies quality</span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <span style="background: #EF4444; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 0.75rem;">5</span>
+                    <span style="background: #EF4444; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; box-shadow: 0 0 10px #EF4444;">5</span>
                     <span style="color: #CBD5E1;"><strong style="color: #EF4444;">Safety</strong> ensures compliance</span>
                 </div>
             </div>
