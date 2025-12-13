@@ -784,7 +784,7 @@ def main():
         page_title="HCI Research Interface",
         page_icon="🔮",
         layout="wide",
-        initial_sidebar_state="collapsed"
+        initial_sidebar_state="expanded"
     )
 
     # Handle "Try These" button auto-fill - must happen BEFORE text_area is rendered
