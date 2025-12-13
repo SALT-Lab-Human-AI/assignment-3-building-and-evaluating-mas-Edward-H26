@@ -21,10 +21,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-# =============================================================================
-# PII DETECTION AND REDACTION
-# =============================================================================
-
+# PII Detection
 # Common PII patterns
 PII_PATTERNS = {
     "email": r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
@@ -86,10 +83,7 @@ async def redact_pii(response: str) -> str:
     return redacted
 
 
-# =============================================================================
-# HARMFUL CONTENT DETECTION
-# =============================================================================
-
+# Harmful Content Detection
 HARMFUL_KEYWORDS = [
     "hack", "exploit", "vulnerability", "attack", "malware",
     "phishing", "steal", "fraud", "illegal", "bypass security",
@@ -134,10 +128,7 @@ async def check_harmful_content(response: str) -> bool:
     return False
 
 
-# =============================================================================
-# FACTUAL GROUNDING CHECK
-# =============================================================================
-
+# Factual Grounding
 SPECULATION_MARKERS = [
     "might be", "could be", "possibly", "perhaps",
     "I think", "I believe", "probably", "likely",
@@ -192,10 +183,7 @@ async def check_factual_grounding(response: str) -> bool:
     return False
 
 
-# =============================================================================
-# CITATION CHECK
-# =============================================================================
-
+# Citation Check
 @action(is_system_action=True)
 async def check_citations(response: str) -> bool:
     """
@@ -227,10 +215,7 @@ async def check_citations(response: str) -> bool:
     return False
 
 
-# =============================================================================
-# RESPONSE QUALITY ASSESSMENT
-# =============================================================================
-
+# Response Quality
 @action(is_system_action=True)
 async def assess_response_quality(response: str) -> float:
     """
@@ -270,10 +255,7 @@ async def assess_response_quality(response: str) -> float:
     return min(1.0, max(0.0, score))
 
 
-# =============================================================================
-# TOPIC RELEVANCE CHECK
-# =============================================================================
-
+# Topic Relevance
 HCI_KEYWORDS = [
     "hci", "human-computer", "user experience", "ux", "usability",
     "accessibility", "interface", "interaction design", "user research",
@@ -309,10 +291,7 @@ async def check_topic_relevance(query: str) -> bool:
     return False
 
 
-# =============================================================================
-# JAILBREAK DETECTION
-# =============================================================================
-
+# Jailbreak Detection
 JAILBREAK_PATTERNS = [
     r"ignore\s+(your\s+)?(previous\s+)?instructions",
     r"forget\s+(your\s+)?rules",
@@ -351,10 +330,7 @@ async def detect_jailbreak(query: str) -> bool:
     return False
 
 
-# =============================================================================
-# SAFETY EVENT LOGGING
-# =============================================================================
-
+# Safety Event Logging
 def log_safety_event(
     event_type: str,
     content: str,

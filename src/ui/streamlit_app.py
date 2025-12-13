@@ -15,6 +15,7 @@ sys.path.insert(0, str(project_root))
 import streamlit as st
 import asyncio
 import yaml
+import json
 from datetime import datetime
 from typing import Dict, Any
 from dotenv import load_dotenv
@@ -177,6 +178,60 @@ def calculate_quality_score(result: Dict[str, Any]) -> float:
     return min(score, 10.0)
 
 
+def export_session_json() -> str:
+    """Export current session as JSON."""
+    session_data = {
+        "timestamp": datetime.now().isoformat(),
+        "session_id": st.session_state.get("session_start", datetime.now().strftime("%Y-%m-%d %H:%M")),
+        "total_queries": len(st.session_state.history),
+        "queries": []
+    }
+
+    for item in st.session_state.history:
+        query_data = {
+            "timestamp": item.get("timestamp", ""),
+            "query": item.get("query", ""),
+            "response": item.get("result", {}).get("response", ""),
+            "citations": item.get("result", {}).get("citations", []),
+            "metadata": item.get("result", {}).get("metadata", {}),
+            "agent_traces": item.get("result", {}).get("metadata", {}).get("agent_traces", {}),
+            "safety_events": item.get("result", {}).get("metadata", {}).get("safety_events", [])
+        }
+        session_data["queries"].append(query_data)
+
+    return json.dumps(session_data, indent=2)
+
+
+def export_session_markdown() -> str:
+    """Export current session as Markdown."""
+    lines = []
+    lines.append("# HCI Research Session Export")
+    lines.append(f"\n**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append(f"**Total Queries:** {len(st.session_state.history)}")
+    lines.append("\n---\n")
+
+    for i, item in enumerate(st.session_state.history, 1):
+        query = item.get("query", "")
+        result = item.get("result", {})
+        response = result.get("response", "No response")
+        citations = result.get("citations", [])
+
+        lines.append(f"## Query {i}")
+        lines.append(f"\n**Question:** {query}")
+        lines.append(f"\n**Timestamp:** {item.get('timestamp', 'N/A')}")
+        lines.append("\n### Response\n")
+        lines.append(response)
+
+        if citations:
+            lines.append("\n### Sources\n")
+            for j, citation in enumerate(citations[:10], 1):
+                lines.append(f"{j}. {citation}")
+
+        lines.append("\n---\n")
+
+    return "\n".join(lines)
+
+
 def display_response(result: Dict[str, Any]):
     """Display query response with glassmorphism styling."""
     # Check for errors
@@ -231,10 +286,22 @@ def display_response(result: Dict[str, Any]):
     with col3:
         st.metric("🔒 Safety", "✓ Passed")
 
-    # Safety events
+    # Safety events with enhanced category display
     safety_events = metadata.get("safety_events", [])
     if safety_events:
         with st.expander("⚠️ Safety Events", expanded=True):
+            severity_colors = {
+                "CRITICAL": "#DC2626",
+                "HIGH": "#EF4444",
+                "MEDIUM": "#F59E0B",
+                "LOW": "#10B981"
+            }
+            action_icons = {
+                "REFUSED": "🚫",
+                "SANITIZED": "🧹",
+                "REDIRECTED": "↪️",
+                "WARNED": "⚠️"
+            }
             for event in safety_events:
                 event_type = event.get("type", "unknown")
                 violations = event.get("violations", [])
@@ -251,13 +318,106 @@ def display_response(result: Dict[str, Any]):
                 </div>
                 """, unsafe_allow_html=True)
                 for violation in violations:
-                    st.text(f"  • {violation.get('reason', 'Unknown')}")
+                    category = violation.get('category', 'unknown')
+                    severity = violation.get('severity', 'MEDIUM')
+                    action = violation.get('action', 'WARNED')
+                    reason = violation.get('reason', 'Unknown')
+                    sev_color = severity_colors.get(severity, "#F59E0B")
+                    act_icon = action_icons.get(action, "⚠️")
+                    st.markdown(f"""
+                    <div style="margin-left: 1rem; margin-bottom: 0.5rem; padding: 0.5rem; background: rgba(0,0,0,0.1); border-radius: 4px;">
+                        <span style="background: {sev_color}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">{severity}</span>
+                        <span style="margin-left: 0.5rem; color: #94A3B8;">{category.replace('_', ' ').title()}</span>
+                        <span style="margin-left: 0.5rem;">{act_icon} {action}</span>
+                        <div style="color: #CBD5E1; margin-top: 0.25rem; font-size: 0.9rem;">{reason}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+    # LLM Judge Evaluation Scores
+    judge_scores = metadata.get("judge_scores", {})
+    if judge_scores:
+        display_judge_scores(judge_scores)
 
     # Agent traces
     if st.session_state.show_traces:
         agent_traces = metadata.get("agent_traces", {})
         if agent_traces:
             display_agent_traces(agent_traces)
+
+
+def display_judge_scores(judge_scores: Dict[str, Any]):
+    """Display LLM Judge evaluation scores with progress bars."""
+    weights = {
+        "relevance": 0.25,
+        "evidence_quality": 0.25,
+        "factual_accuracy": 0.20,
+        "safety_compliance": 0.15,
+        "clarity": 0.15
+    }
+
+    criterion_icons = {
+        "relevance": "🎯",
+        "evidence_quality": "📚",
+        "factual_accuracy": "✓",
+        "safety_compliance": "🔒",
+        "clarity": "💡"
+    }
+
+    with st.expander("🏆 LLM Judge Evaluation", expanded=False):
+        overall_score = judge_scores.get("overall_score", 0.0)
+
+        # Overall score header
+        st.markdown(f"""
+        <div style="
+            text-align: center;
+            padding: 1rem;
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(59, 130, 246, 0.2));
+            border-radius: 12px;
+            margin-bottom: 1rem;
+        ">
+            <div style="font-size: 2rem; font-weight: bold; color: #10B981;">
+                {overall_score:.1%}
+            </div>
+            <div style="color: #94A3B8; font-size: 0.9rem;">Overall Score</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Individual criterion scores
+        criterion_scores = judge_scores.get("criterion_scores", {})
+        for criterion, data in criterion_scores.items():
+            score = data.get("score", 0.0) if isinstance(data, dict) else data
+            weight = weights.get(criterion, 0.0)
+            icon = criterion_icons.get(criterion, "📊")
+
+            # Color based on score
+            if score >= 0.85:
+                color = "#10B981"  # Green
+            elif score >= 0.70:
+                color = "#F59E0B"  # Yellow
+            else:
+                color = "#EF4444"  # Red
+
+            st.markdown(f"""
+            <div style="margin-bottom: 0.75rem;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem;">
+                    <span>{icon} {criterion.replace('_', ' ').title()}</span>
+                    <span style="color: {color};">{score:.1%} <span style="color: #64748B; font-size: 0.8rem;">({weight:.0%})</span></span>
+                </div>
+                <div style="
+                    background: rgba(100, 116, 139, 0.2);
+                    border-radius: 4px;
+                    height: 8px;
+                    overflow: hidden;
+                ">
+                    <div style="
+                        width: {score * 100}%;
+                        height: 100%;
+                        background: {color};
+                        border-radius: 4px;
+                    "></div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
 
 def display_agent_traces(traces: Dict[str, Any]):
@@ -417,9 +577,7 @@ def display_agent_traces(traces: Dict[str, Any]):
 def display_sidebar():
     """Display sidebar with NEXUS cyberpunk holographic styling."""
     with st.sidebar:
-        # ==========================================================================
-        # NEXUS HOLOGRAPHIC LOGO SECTION
-        # ==========================================================================
+        # Holographic Logo
         st.markdown("""
         <div style="text-align: center; padding: 2rem 1rem; position: relative;">
             <!-- Holographic Logo Icon -->
@@ -458,9 +616,7 @@ def display_sidebar():
 
         st.divider()
 
-        # ==========================================================================
-        # HOLOGRAPHIC NAVIGATION SECTION
-        # ==========================================================================
+        # Navigation
         st.markdown("""
         <div style="margin-bottom: 1rem;">
             <p style="
@@ -484,9 +640,7 @@ def display_sidebar():
 
         st.divider()
 
-        # ==========================================================================
-        # HOLOGRAPHIC METRICS SECTION
-        # ==========================================================================
+        # Metrics
         st.markdown("""
         <div style="margin-bottom: 1rem;">
             <p style="
@@ -529,9 +683,46 @@ def display_sidebar():
 
         st.divider()
 
-        # ==========================================================================
-        # SYSTEM INFO CARD
-        # ==========================================================================
+        # Export Buttons Section
+        st.markdown("""
+        <p style="
+            color: rgba(0, 255, 255, 0.8);
+            font-size: 0.7rem;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 0.5rem;
+        ">Export Session</p>
+        """, unsafe_allow_html=True)
+
+        col_json, col_md = st.columns(2)
+        with col_json:
+            if st.session_state.history:
+                json_data = export_session_json()
+                st.download_button(
+                    label="JSON",
+                    data=json_data,
+                    file_name=f"hci_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                    mime="application/json",
+                    use_container_width=True
+                )
+            else:
+                st.button("JSON", disabled=True, use_container_width=True)
+        with col_md:
+            if st.session_state.history:
+                md_data = export_session_markdown()
+                st.download_button(
+                    label="MD",
+                    data=md_data,
+                    file_name=f"hci_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+                    mime="text/markdown",
+                    use_container_width=True
+                )
+            else:
+                st.button("MD", disabled=True, use_container_width=True)
+
+        st.divider()
+
+        # System Info
         config = load_config()
         system_name = config.get("system", {}).get("name", "Research Assistant")
         topic = config.get("system", {}).get("topic", "HCI")
@@ -601,10 +792,7 @@ def main():
         st.session_state.query_input = st.session_state.example_query
         del st.session_state.example_query
 
-    # ==========================================================================
-    # NEXUS IMMERSIVE 3D SPATIAL WEB CSS
-    # A breathtaking first-person view of an immersive 'Spatial Web' interface
-    # ==========================================================================
+    # CSS Styles
     st.markdown("""
     <style>
         /* ================================================================== */
@@ -1300,9 +1488,7 @@ def main():
     </style>
     """, unsafe_allow_html=True)
 
-    # ==========================================================================
-    # NEXUS BACKGROUND LAYERS HTML
-    # ==========================================================================
+    # Background Layers
     st.markdown("""
     <div class="nexus-warp-tunnel" style="
         position: fixed;
@@ -1378,9 +1564,7 @@ def main():
     </style>
     """, unsafe_allow_html=True)
 
-    # ==========================================================================
-    # AUDIO VISUALIZER HTML (CSS Animation)
-    # ==========================================================================
+    # Audio Visualizer
     st.markdown("""
     <div class="nexus-visualizer" style="
         position: fixed;
@@ -1412,9 +1596,7 @@ def main():
 
     initialize_session_state()
 
-    # ==========================================================================
-    # NEXUS HOLOGRAPHIC HERO SECTION
-    # ==========================================================================
+    # Hero Section
     st.markdown("""
     <div style="text-align: center; padding: 3rem 0; position: relative;">
         <h1 class="nexus-hero-title" style="font-size: 3.5rem; font-weight: 900; letter-spacing: -0.02em; background: linear-gradient(135deg, #00FFFF 0%, #FFFFFF 25%, #FF00FF 50%, #FFFFFF 75%, #00FFFF 100%); background-size: 200% 200%; -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; animation: chrome-shift 3s ease infinite; filter: drop-shadow(0 0 30px rgba(0, 255, 255, 0.4)); margin-bottom: 0.5rem;">HCI Research Interface</h1>

@@ -5,10 +5,7 @@ Part 1: AUTOGEN IMPLEMENTATION (Commented Out)
 Part 2: LANGGRAPH IMPLEMENTATION (Active)
 """
 
-# ============================================================
-# PART 1: AUTOGEN IMPLEMENTATION (COMMENTED OUT)
-# Original AutoGen-based orchestrator using RoundRobinGroupChat
-# ============================================================
+# AutoGen Implementation (Commented Out)
 """
 # TODO: YOUR CODE HERE - AutoGen Orchestrator Implementation
 # - Create AutoGen agents with specialized prompts
@@ -431,17 +428,12 @@ if __name__ == "__main__":
     demonstrate_usage()
 """
 
-# ============================================================
-# PART 2: LANGGRAPH IMPLEMENTATION (ACTIVE)
-# LangGraph-based orchestrator with StateGraph architecture
-# ============================================================
+# LangGraph Implementation
 
 # TODO: YOUR CODE HERE - LangGraph Orchestrator Implementation
 # - Implement state management
 # - Create supervisor graph
 # - Handle workflow execution
-
-# ----- STATE DEFINITIONS (from src/langgraph/state.py) -----
 
 from typing import TypedDict, Annotated, List, Dict, Any, Literal, Optional
 from langgraph.graph import add_messages
@@ -560,8 +552,6 @@ def create_initial_state(query: str, max_iterations: int = 5) -> ResearchState:
         "status": "planning",
     }
 
-
-# ----- REFLEXION ENGINE (from src/langgraph/reflexion.py) -----
 
 from datetime import datetime
 import json
@@ -878,9 +868,6 @@ class ReflexionEngine:
             return False
 
 
-# ----- SAFETY GUARDIAN (from src/langgraph/safety.py) -----
-
-
 class SafetyGuardian:
     """
     3-Layer Safety System for LangGraph.
@@ -1094,20 +1081,12 @@ class SafetyGuardian:
         self.safety_log = []
 
 
-# ----- TEAMS (merged into src/agents/autogen_agents.py) -----
-# Note: Team implementations are now in the merged autogen_agents.py file
-# This consolidates LangGraph teams with commented AutoGen agents
-
 from src.agents.autogen_agents import (
     create_planning_team,
     create_research_team,
     create_synthesis_team,
 )
 
-
-# ----- SUPERVISOR GRAPH (merged from src/langgraph/supervisor.py) -----
-# Note: Supervisor graph implementation has been merged into this file
-# The original supervisor.py contained the StateGraph workflow logic
 
 from langgraph.graph import StateGraph, END, START
 from langchain_openai import ChatOpenAI
@@ -1285,7 +1264,6 @@ Return JSON only: {{"route": "planning|research|synthesis", "reasoning": "brief 
         3. Calculate verification score
         4. Flag unsupported claims for revision
         """
-        print("[NODE] verification: Starting Chain-of-Verification...")
 
         model = ChatOpenAI(
             model=_config["models"]["default"]["name"],
@@ -1296,7 +1274,6 @@ Return JSON only: {{"route": "planning|research|synthesis", "reasoning": "brief 
         sources = state.get("paper_results", []) + state.get("web_results", [])
 
         if not draft or len(draft) < 100:
-            print("[NODE] verification: Draft too short, skipping")
             return {"verification_score": 0.0, "verified_claims": []}
 
         # Step 1: Extract factual claims
@@ -1325,7 +1302,6 @@ Only include specific, verifiable claims (not opinions or general statements).""
                     claims.append(claim)
 
         if not claims:
-            print("[NODE] verification: No claims extracted")
             return {"verification_score": 0.7, "verified_claims": []}
 
         # Step 2: Build source context for verification
@@ -1379,8 +1355,6 @@ CLAIM_NUMBER: STATUS (brief reason)"""
         else:
             score = 0.7
 
-        print(f"[NODE] verification: {verified}/{total_claims} verified, {partial} partial, score={score:.3f}")
-
         return {
             "verification_score": score,
             "verified_claims": results,
@@ -1399,7 +1373,6 @@ CLAIM_NUMBER: STATUS (brief reason)"""
         2. Generate self-critique
         3. Apply refinement if needed
         """
-        print("[NODE] self_refine: Starting self-refinement check...")
 
         verification_score = state.get("verification_score", 0.7)
         draft = state.get("draft", "")
@@ -1418,10 +1391,7 @@ CLAIM_NUMBER: STATUS (brief reason)"""
         needs_refine = (low_verification or low_citations) and iteration < 4
 
         if not needs_refine:
-            print(f"[NODE] self_refine: No refinement needed (score={verification_score:.3f}, citations={citation_count})")
             return {"self_refine_applied": False}
-
-        print(f"[NODE] self_refine: Refinement triggered (score={verification_score:.3f}, citations={citation_count})")
 
         model = ChatOpenAI(
             model=_config["models"]["default"]["name"],
@@ -1495,8 +1465,6 @@ Write the improved response with at least 10 inline citations distributed throug
 
         refined_draft = refined_response.content
 
-        print(f"[NODE] self_refine: Applied refinement (original={len(draft)}, refined={len(refined_draft)})")
-
         return {
             "draft": refined_draft,
             "critique": critique,
@@ -1509,7 +1477,6 @@ Write the improved response with at least 10 inline citations distributed throug
 
         Innovation: Tracks failures in memory and applies lessons to avoid repeating them.
         """
-        print("[NODE] reflexion_check: Starting evaluation...")
         engine = ReflexionEngine(state.get("reflexion_memory", {}))
 
         evaluation = engine.evaluate(
@@ -1532,7 +1499,6 @@ Write the improved response with at least 10 inline citations distributed throug
                 log.get("success", False)
             )
 
-        print(f"[NODE] reflexion_check: score={evaluation['score']:.3f}")
         return {
             "reflexion_score": evaluation["score"],
             "reflexion_memory": updated_memory,
@@ -1592,7 +1558,6 @@ Return JSON only:
         except (json.JSONDecodeError, IndexError):
             overall_score = 0.5
 
-        print(f"[NODE] llm_judge: score={overall_score:.3f}")
         return {
             "llm_judge_score": overall_score,
         }
@@ -1639,7 +1604,6 @@ Return JSON only:
         if decision == "human_needed":
             decision = "approved" if (llm_score + reflexion_score) / 2 >= 0.65 else "revise"
 
-        print(f"[NODE] triangulate: decision={decision} (llm={llm_score:.3f}, reflexion={reflexion_score:.3f})")
         return {
             "triangulated_decision": decision,
             "status": "approved" if decision == "approved" else "reviewing",
@@ -1647,12 +1611,10 @@ Return JSON only:
 
     def safety_postflight_node(state: ResearchState) -> Dict:
         """Layer 3: Post-flight safety check and sanitization."""
-        print("[NODE] safety_postflight: Running post-flight safety check...")
         guardian = SafetyGuardian()
 
         result = guardian.postflight_check(state.get("draft", ""))
 
-        print(f"[NODE] safety_postflight: safe={result['safe']}, final_response set")
         return {
             "safety_layer3_result": result,
             "final_response": result.get("sanitized_response", state.get("draft", "")),
@@ -1804,8 +1766,6 @@ def compile_graph(config: Dict):
     graph = create_supervisor_graph(config)
     return graph.compile()
 
-
-# ----- MAIN ORCHESTRATOR CLASS (from src/langgraph_orchestrator.py) -----
 
 import logging
 import yaml
@@ -2160,60 +2120,23 @@ def demonstrate_usage():
     """Demonstrate how to use the LangGraph orchestrator."""
     from dotenv import load_dotenv
 
-    # Load environment variables
     load_dotenv()
 
-    # Load configuration
     with open("config.yaml", "r") as f:
         config = yaml.safe_load(f)
 
-    # Create orchestrator
     orchestrator = LangGraphOrchestrator(config)
 
-    # Print workflow visualization
-    print(orchestrator.visualize_workflow())
-
-    # Print agent descriptions
-    print("\nAgent/Team Descriptions:")
-    print("-" * 50)
-    for agent, desc in orchestrator.get_agent_descriptions().items():
-        print(f"  {agent}: {desc}")
-
-    # Example query
     query = "What are Nielsen's usability heuristics and how are they applied in modern interface design?"
 
-    print(f"\n{'='*70}")
-    print(f"Processing query: {query}")
-    print("=" * 70)
-
-    # Process query
     result = orchestrator.process_query(query)
 
-    # Display results
-    print("\n" + "=" * 70)
-    print("RESULTS")
-    print("=" * 70)
-    print(f"\nQuery: {result['query']}")
-    print(f"\nResponse:\n{result['response'][:1000]}...")
-    print(f"\nWorkflow Trace:")
-    for step in result.get("workflow_trace", []):
-        print(f"  - {step['step']}: {step.get('result', 'completed')}")
-    print(f"\nMetadata:")
-    meta = result.get("metadata", {})
-    print(f"  - Execution time: {meta.get('execution_time_seconds', 0):.2f}s")
-    print(f"  - Iterations: {meta.get('iterations', 0)}")
-    print(f"  - Paper sources: {meta.get('paper_sources', 0)}")
-    print(f"  - Web sources: {meta.get('web_sources', 0)}")
-    print(f"  - Reflexion score: {meta.get('reflexion_score', 0):.3f}")
-    print(f"  - LLM judge score: {meta.get('llm_judge_score', 0):.3f}")
-    print(f"  - Decision: {meta.get('triangulated_decision', 'unknown')}")
+    return result
 
 
 if __name__ == "__main__":
-    # Set up logging
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
-
     demonstrate_usage()

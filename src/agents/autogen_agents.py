@@ -7,10 +7,7 @@ Part 1: AUTOGEN AGENTS (Commented Out)
 Part 2: LANGGRAPH TEAMS (Active)
 """
 
-# ============================================================
-# PART 1: AUTOGEN AGENTS (COMMENTED OUT)
-# Original AutoGen AssistantAgent implementations
-# ============================================================
+# AutoGen Agents (Commented Out)
 """
 # TODO: YOUR CODE HERE - AutoGen Agent Implementation (PRESERVED)
 # The following AutoGen-based agent implementations are preserved for reference.
@@ -326,10 +323,7 @@ def create_research_team(config: Dict[str, Any]) -> RoundRobinGroupChat:
 # END OF AUTOGEN IMPLEMENTATION
 """
 
-# ============================================================
-# PART 2: LANGGRAPH TEAMS (ACTIVE)
-# LangGraph team creation with specialized agents
-# ============================================================
+# LangGraph Teams
 
 # TODO: YOUR CODE HERE - LangGraph Team Implementation
 # - Create planning team
