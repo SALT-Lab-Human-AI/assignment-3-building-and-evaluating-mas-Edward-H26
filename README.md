@@ -3,6 +3,17 @@
 
 A multi-agent system for deep research on HCI topics, featuring orchestrated agents, safety guardrails, and LLM-as-a-Judge evaluation.
 
+## Quick Links
+
+| Resource | Link |
+|----------|------|
+| Live Demo | [Try the App](https://salt-lab-human-ai-assignment-3-buildi-srcuistreamlit-app-zweknl.streamlit.app/) |
+| Technical Report (PDF) | [TECHNICAL_REPORT_QiranHu.pdf](./TECHNICAL_REPORT_QiranHu.pdf) |
+| Technical Report (Markdown) | [TECHNICAL_REPORT.md](./TECHNICAL_REPORT.md) |
+| Demo Screenshot | [demo.png](./demo.png) |
+
+![Demo Screenshot](./demo.png)
+
 ## Overview
 
 This template provides a starting point for building a multi-agent research assistant system. The system uses multiple specialized agents to:
